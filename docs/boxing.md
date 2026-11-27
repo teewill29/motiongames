@@ -245,6 +245,14 @@ Stamina, rounds with rests, knockdowns and the get-up meter, all win types, the 
 
 **Done when:** a 3-round fight plays start to finish with correct results and saved stats.
 
+**Implementation notes:**
+- Opponent knockdowns: each fighter's data lists the count he rises at for each knockdown (`stats.getUpCounts`; Dusty: 6, then 8). A knockdown past the list is a KO. He rises with 40% health.
+- The round clock stops during a knockdown count. Your punches count toward the get-up meter regardless of stamina.
+- Round scoring: 10-9 to whoever dealt more damage in the round (10-10 if even), minus a point per knockdown suffered.
+- Rest: +15 health and full stamina for you, full stamina for him. Enter skips the rest of the break.
+- Sound is synthesized with Web Audio (no audio files). The referee's count uses the browser's speech voice. Each attack has its own cue during the tell.
+- Sessions save through `core/stats/history.ts` (all games), and the best result per opponent through `games/boxing/record.ts`.
+
 ### Phase 4: Roster and career
 
 All six fighters as data files, feints, career mode, exhibition mode and the fight history screen.

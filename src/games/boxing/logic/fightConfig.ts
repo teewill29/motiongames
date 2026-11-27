@@ -41,9 +41,60 @@ export const fightConfig = {
   punchCross: 5,
   punchHook: 7,
   punchUppercut: 8,
+
+  // Player stamina.
+  staminaMax: 100,
+  costJab: 3,
+  costCross: 5,
+  costHook: 6,
+  costUppercut: 7,
+  staminaRegenPerSec: 12,
+  /** Regen starts this long after the last punch. */
+  staminaRegenDelayMs: 500,
+  /** Below this, punches deal lowStaminaDamage × damage and the screen edges dim. */
+  lowStamina: 25,
+  lowStaminaDamage: 0.5,
+  /** At 0 stamina punches don't register until stamina is back above this. */
+  exhaustedRecover: 10,
+
+  // Opponent stamina.
+  /** Each body shot that lands drains this much opponent stamina. */
+  bodyStaminaDrain: 8,
+  opponentStaminaRegenPerSec: 4,
+  /** Below this fraction of stamina he's tired: slower tells, longer openings. */
+  opponentTiredAt: 0.3,
+  opponentTiredSlowdown: 1.3,
+
+  // Knockdowns.
+  /** One referee count, ms. */
+  countMs: 1000,
+  /** Punches to fill the get-up meter on the first knockdown... */
+  getUpPunches: 20,
+  /** ...plus this many for each knockdown after the first. */
+  getUpPunchesExtra: 5,
+  /** Player health after getting up. */
+  getUpHealth: 40,
+  /** Opponent health after getting up, as a fraction of max. */
+  opponentGetUpHealth: 0.4,
+  /** Knockdowns in one round that end the fight (TKO). */
+  tkoKnockdowns: 3,
+  /** Pause after someone gets up, before fighting resumes. */
+  resumeMs: 1500,
+
+  // Rests between rounds.
+  restHealth: 15,
 };
 
 export type FightConfig = typeof fightConfig;
+
+/** Fight format, from the boxing settings. */
+export interface FightFormat {
+  rounds: number;
+  roundMs: number;
+  restMs: number;
+}
+
+export const DEFAULT_FORMAT: FightFormat = { rounds: 3, roundMs: 180_000, restMs: 60_000 };
 
 export const fightConfigSpecs: TunableSpecs<FightConfig> = {
   playerHealth: { min: 10, max: 300, step: 10, label: "Player health" },
@@ -72,4 +123,26 @@ export const fightConfigSpecs: TunableSpecs<FightConfig> = {
   punchCross: { min: 0, max: 30, step: 0.5, label: "Cross damage" },
   punchHook: { min: 0, max: 30, step: 0.5, label: "Hook damage" },
   punchUppercut: { min: 0, max: 30, step: 0.5, label: "Uppercut damage" },
+  staminaMax: { min: 20, max: 300, step: 10, label: "Stamina max" },
+  costJab: { min: 0, max: 30, step: 0.5, label: "Jab stamina" },
+  costCross: { min: 0, max: 30, step: 0.5, label: "Cross stamina" },
+  costHook: { min: 0, max: 30, step: 0.5, label: "Hook stamina" },
+  costUppercut: { min: 0, max: 30, step: 0.5, label: "Uppercut stamina" },
+  staminaRegenPerSec: { min: 0, max: 60, step: 1, label: "Stamina regen /s" },
+  staminaRegenDelayMs: { min: 0, max: 3000, step: 100, label: "Stamina regen delay (ms)" },
+  lowStamina: { min: 0, max: 100, step: 1, label: "Low stamina" },
+  lowStaminaDamage: { min: 0, max: 1, step: 0.05, label: "Low stamina damage ×" },
+  exhaustedRecover: { min: 0, max: 50, step: 1, label: "Exhausted recover" },
+  bodyStaminaDrain: { min: 0, max: 40, step: 1, label: "Body shot stamina drain" },
+  opponentStaminaRegenPerSec: { min: 0, max: 30, step: 0.5, label: "Opponent stamina regen /s" },
+  opponentTiredAt: { min: 0, max: 1, step: 0.05, label: "Opponent tired at" },
+  opponentTiredSlowdown: { min: 1, max: 3, step: 0.05, label: "Opponent tired slowdown" },
+  countMs: { min: 200, max: 2000, step: 50, label: "Count interval (ms)" },
+  getUpPunches: { min: 1, max: 60, step: 1, label: "Get-up punches" },
+  getUpPunchesExtra: { min: 0, max: 30, step: 1, label: "Get-up extra per knockdown" },
+  getUpHealth: { min: 1, max: 100, step: 1, label: "Get-up health" },
+  opponentGetUpHealth: { min: 0.05, max: 1, step: 0.05, label: "Opponent get-up health" },
+  tkoKnockdowns: { min: 1, max: 10, step: 1, label: "TKO knockdowns" },
+  resumeMs: { min: 0, max: 5000, step: 100, label: "Resume pause (ms)" },
+  restHealth: { min: 0, max: 100, step: 1, label: "Rest health regen" },
 };

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { validateFighter, FighterDataError, type FighterData } from "../src/games/boxing/data/fighter";
 import { ROSTER } from "../src/games/boxing/data/roster";
-import { FightLogic, STEP_MS, type FightEvent, type FightInput, type PlayerDefense } from "../src/games/boxing/logic/fight";
-import { fightConfig } from "../src/games/boxing/logic/fightConfig";
+import { FightLogic, FULL_COUNT, STEP_MS, type FightEvent, type FightInput, type PlayerDefense } from "../src/games/boxing/logic/fight";
+import { fightConfig, type FightFormat } from "../src/games/boxing/logic/fightConfig";
 import { seededRng } from "../src/games/boxing/logic/rng";
 import type { PunchEvent, PunchType } from "../src/games/boxing/types";
 
@@ -32,8 +32,8 @@ function only(attackId: string, overrides: Partial<FighterData["stats"]> = {}): 
   };
 }
 
-function setup(fighter: FighterData = dusty, cfg = { ...fightConfig }) {
-  const logic = new FightLogic(fighter, cfg, seededRng(1));
+function setup(fighter: FighterData = dusty, cfg = { ...fightConfig }, format?: FightFormat) {
+  const logic = new FightLogic(fighter, cfg, seededRng(1), format);
   const events: FightEvent[] = [];
   const step = (input: Partial<FightInput> = {}) => {
     logic.step({ punches: [], defense: NONE, ...input });
@@ -63,7 +63,7 @@ describe("fight logic", () => {
     const f = setup();
     expect(f.s.phase).toBe("countdown");
     f.skipCountdown();
-    expect(f.events[0]!.type).toBe("fight-start");
+    expect(f.events[0]).toMatchObject({ type: "round-start", round: 1 });
     expect(f.s.time).toBeCloseTo(fightConfig.countdownMs, -2);
   });
 
@@ -150,6 +150,7 @@ describe("fight logic", () => {
   });
 
   it("adds snap and combo bonuses", () => {
+    // (full stamina, so no low-stamina penalty)
     const f = setup(only("jab", { restMs: [5000, 5000] }));
     f.skipCountdown();
     const h0 = f.s.opponent.health;
@@ -175,20 +176,6 @@ describe("fight logic", () => {
     expect(f.s.opponent.name).toBe("stunned");
   });
 
-  it("ends in a KO either way", () => {
-    const win = setup(only("jab", { restMs: [5000, 5000], health: 10 }));
-    win.skipCountdown();
-    win.until(() => win.s.phase === "over", { punches: [punch("uppercut")] });
-    expect(win.s.result).toMatchObject({ winner: "player", method: "KO" });
-    expect(win.s.opponent.name).toBe("ko");
-
-    const loss = setup(only("hook-right"), { ...fightConfig, playerHealth: 10 });
-    loss.skipCountdown();
-    loss.until(() => loss.s.phase === "over");
-    expect(loss.s.result).toMatchObject({ winner: "opponent" });
-    expect(loss.s.opponent.name).toBe("victory");
-  });
-
   it("plays a whole fight: a player who reads every tell beats Dusty", () => {
     // Bot: duck hooks, slip jabs, counter when open, otherwise wait.
     const f = setup(dusty);
@@ -200,7 +187,181 @@ describe("fight logic", () => {
       f.step({ defense, punches });
     }
     expect(f.s.result?.winner).toBe("player");
-    expect(f.s.player.health).toBe(fightConfig.playerHealth);
+    expect(f.s.stats.damageTaken).toBe(0);
     expect(f.s.stats.counters).toBeGreaterThan(5);
+  });
+});
+
+describe("stamina", () => {
+  it("costs stamina per punch and regenerates after a pause", () => {
+    const f = setup(only("jab", { restMs: [60_000, 60_000] }));
+    f.skipCountdown();
+    f.step({ punches: [punch("uppercut")] });
+    expect(f.s.player.stamina).toBeCloseTo(fightConfig.staminaMax - fightConfig.costUppercut, 5);
+    // No regen inside the delay...
+    for (let t = 0; t < fightConfig.staminaRegenDelayMs - 50; t += STEP_MS) f.step();
+    expect(f.s.player.stamina).toBeCloseTo(fightConfig.staminaMax - fightConfig.costUppercut, 5);
+    // ...then 12 per second.
+    for (let t = 0; t < 1000; t += STEP_MS) f.step();
+    expect(f.s.player.stamina).toBe(fightConfig.staminaMax);
+  });
+
+  it("halves damage below 25 and stops punches at 0 until back above 10", () => {
+    const f = setup(only("jab", { restMs: [60_000, 60_000], health: 1000 }));
+    f.skipCountdown();
+    f.s.player.stamina = 20;
+    const h = f.s.opponent.health;
+    f.step({ punches: [punch("jab", fightConfig.snapSlowMs)] });
+    expect(h - f.s.opponent.health).toBeCloseTo(fightConfig.punchJab * fightConfig.lowStaminaDamage, 5);
+    f.s.player.stamina = 2;
+    f.step({ punches: [punch("cross")] });
+    expect(f.s.player.exhausted).toBe(true);
+    const thrown = f.s.stats.thrown;
+    f.step({ punches: [punch("cross")] });
+    expect(f.s.stats.thrown).toBe(thrown);
+    expect(f.events.some((e) => e.type === "too-tired")).toBe(true);
+    f.until(() => !f.s.player.exhausted);
+    expect(f.s.player.stamina).toBeGreaterThan(fightConfig.exhaustedRecover);
+  });
+
+  it("body shots drain his stamina; a tired opponent winds up slower", () => {
+    const f = setup(only("jab", { restMs: [60_000, 60_000], health: 1000, staminaMax: 40 }));
+    f.skipCountdown();
+    for (let i = 0; i < 5; i++) f.step({ punches: [{ ...punch(), target: "body" }] });
+    expect(f.s.opponent.stamina).toBeLessThan(40 * fightConfig.opponentTiredAt);
+  });
+});
+
+describe("knockdowns", () => {
+  const ROUND = { rounds: 3, roundMs: 180_000, restMs: 60_000 };
+
+  it("puts the player down at 0 health; 20 punches get him up at 40 health", () => {
+    const f = setup(only("hook-right"), { ...fightConfig }, ROUND);
+    f.skipCountdown();
+    f.s.player.health = 5;
+    f.until(() => f.s.phase === "knockdown");
+    expect(f.s.knockdown).toMatchObject({ who: "player", getUpNeeded: 20 });
+    for (let i = 0; i < 19; i++) f.step({ punches: [punch()] });
+    expect(f.s.knockdown!.resumeLeft).toBeNull();
+    f.step({ punches: [punch()] });
+    expect(f.events.some((e) => e.type === "get-up" && e.who === "player")).toBe(true);
+    expect(f.s.player.health).toBe(fightConfig.getUpHealth);
+    f.until(() => f.s.phase === "fighting");
+  });
+
+  it("each later knockdown needs 5 more punches", () => {
+    const f = setup(only("hook-right"), { ...fightConfig, playerHealth: 5, getUpHealth: 5 }, ROUND);
+    f.skipCountdown();
+    f.until(() => f.s.phase === "knockdown");
+    f.step({ punches: Array.from({ length: 20 }, () => punch()) });
+    f.until(() => f.s.phase === "fighting");
+    f.until(() => f.s.phase === "knockdown");
+    expect(f.s.knockdown!.getUpNeeded).toBe(25);
+  });
+
+  it("is a KO when the player stays down for the 10 count", () => {
+    const f = setup(only("hook-right"), { ...fightConfig, playerHealth: 5 }, ROUND);
+    f.skipCountdown();
+    f.until(() => f.s.phase === "knockdown");
+    f.until(() => f.s.phase === "over");
+    expect(f.events.filter((e) => e.type === "count")).toHaveLength(FULL_COUNT);
+    expect(f.s.result).toMatchObject({ winner: "opponent", method: "KO", round: 1 });
+  });
+
+  it("the opponent gets up at the count in his data, then stays down", () => {
+    const f = setup(only("jab", { restMs: [60_000, 60_000], health: 10, getUpCounts: [6] }), { ...fightConfig, countMs: 100 }, ROUND);
+    f.skipCountdown();
+    f.step({ punches: [punch("uppercut"), punch("uppercut")] });
+    expect(f.s.phase).toBe("knockdown");
+    f.until(() => f.events.some((e) => e.type === "get-up"));
+    expect(f.events.filter((e) => e.type === "count")).toHaveLength(6);
+    expect(f.s.opponent.health).toBeCloseTo(10 * fightConfig.opponentGetUpHealth, 5);
+    f.until(() => f.s.phase === "fighting");
+    f.until(() => f.s.phase !== "fighting", { punches: [punch("uppercut")] });
+    f.until(() => f.s.phase === "over");
+    expect(f.s.result).toMatchObject({ winner: "player", method: "KO" });
+  });
+
+  it("three knockdowns in one round is a TKO", () => {
+    const f = setup(only("jab", { restMs: [60_000, 60_000], health: 5, getUpCounts: [1, 1, 1] }), { ...fightConfig, countMs: 50, resumeMs: 50 }, ROUND);
+    f.skipCountdown();
+    f.until(() => f.s.phase === "over", { punches: [punch("uppercut")] });
+    expect(f.s.opponent.knockdowns).toBe(3);
+    expect(f.s.result).toMatchObject({ winner: "player", method: "TKO", round: 1 });
+  });
+});
+
+describe("rounds", () => {
+  const SHORT = { rounds: 3, roundMs: 5000, restMs: 2000 };
+
+  it("rests between rounds: +15 health, full stamina, then the next round", () => {
+    const f = setup(only("hook-right", { restMs: [300, 300] }), { ...fightConfig }, SHORT);
+    f.skipCountdown();
+    f.until(() => f.s.phase === "rest");
+    const hurt = fightConfig.playerHealth - f.s.stats.damageTaken;
+    expect(hurt).toBeLessThan(fightConfig.playerHealth - fightConfig.restHealth);
+    expect(f.events.find((e) => e.type === "round-end")).toMatchObject({ round: 1, score: { player: 9, opponent: 10 } });
+    f.until(() => f.s.phase === "fighting");
+    expect(f.s.round).toBe(2);
+    expect(f.s.player.health).toBeCloseTo(Math.min(fightConfig.playerHealth, hurt + fightConfig.restHealth), 5);
+    expect(f.s.player.stamina).toBe(fightConfig.staminaMax);
+  });
+
+  it("goes to a decision after the last round, scored 10-9 by damage and 10-8 with a knockdown", () => {
+    // Player lands every so often and slips everything: wins every round.
+    const f = setup(only("jab", { health: 1000 }), { ...fightConfig }, SHORT);
+    f.skipCountdown();
+    let n = 0;
+    f.until(() => f.s.phase === "over", {}, 60_000);
+    // (no input at all: Dusty's jabs land, he wins every round)
+    expect(f.s.result).toMatchObject({ winner: "opponent", method: "Decision", scores: { player: 27, opponent: 30 } });
+    n++;
+    expect(n).toBe(1);
+  });
+
+  it("a draw when every round is even", () => {
+    const f = setup({ ...only("jab", { restMs: [60_000, 60_000] }) }, { ...fightConfig }, { rounds: 2, roundMs: 1000, restMs: 100 });
+    f.skipCountdown();
+    f.until(() => f.s.phase === "over", {}, 10_000);
+    expect(f.s.result).toMatchObject({ winner: "draw", method: "Decision", scores: { player: 20, opponent: 20 } });
+  });
+
+  it("scores a knockdown round 10-8", () => {
+    const f = setup(only("jab", { restMs: [60_000, 60_000], health: 10, getUpCounts: [2] }), { ...fightConfig, countMs: 50, resumeMs: 50 }, { rounds: 1, roundMs: 3000, restMs: 0 });
+    f.skipCountdown();
+    f.step({ punches: [punch("uppercut"), punch("uppercut")] });
+    f.until(() => f.s.phase === "over", {}, 10_000);
+    expect(f.s.rounds[0]!.score).toEqual({ player: 10, opponent: 8 });
+    expect(f.s.result).toMatchObject({ winner: "player", method: "Decision" });
+  });
+
+  it("the round clock stops during a knockdown count", () => {
+    const f = setup(only("hook-right"), { ...fightConfig, playerHealth: 5 }, SHORT);
+    f.skipCountdown();
+    f.until(() => f.s.phase === "knockdown");
+    const left = f.s.roundLeft;
+    for (let i = 0; i < 60; i++) f.step();
+    expect(f.s.roundLeft).toBe(left);
+  });
+
+  it("plays a full 3-round fight to a result with consistent stats", () => {
+    const f = setup(dusty, { ...fightConfig }, { rounds: 3, roundMs: 60_000, restMs: 5000 });
+    f.skipCountdown();
+    // Average player: slips half the jabs, ducks half the hooks, throws a jab every second.
+    let k = 0;
+    for (let t = 0; t < 600_000 && f.s.phase !== "over"; t += STEP_MS) {
+      k++;
+      const o = f.s.opponent;
+      const defend = o.name === "strike" && Math.floor(o.attack!.id.length + f.s.round + Math.floor(f.s.time / 7000)) % 2 === 0;
+      const defense = defend ? (o.attack!.id === "hook-right" ? DUCK : SLIP) : NONE;
+      f.step({ defense, punches: k % 60 === 0 ? [punch("jab", 150)] : [] });
+    }
+    const s = f.s;
+    expect(s.phase).toBe("over");
+    expect(s.result).not.toBeNull();
+    expect(s.stats.landed).toBeLessThanOrEqual(s.stats.thrown);
+    const sumDealt = s.rounds.reduce((a, r) => a + r.damageDealt, 0);
+    expect(sumDealt).toBeCloseTo(s.stats.damageDealt, 5);
+    if (s.result!.method === "Decision") expect(s.rounds.every((r) => r.score)).toBe(true);
   });
 });

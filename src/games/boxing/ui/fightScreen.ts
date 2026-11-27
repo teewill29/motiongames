@@ -1,4 +1,6 @@
+import { AudioEngine } from "../../../core/audio/audio";
 import type { BodyFrame } from "../../../core/body/bodyFrame";
+import { SessionHistory } from "../../../core/stats/history";
 import { loadProfile, type CalibrationProfile } from "../../../core/calibration/profile";
 import { h } from "../../../ui/dom";
 import { PoseStage } from "../../../ui/pose/poseStage";
@@ -9,7 +11,10 @@ import { boxingConfig } from "../config";
 import type { FighterData } from "../data/fighter";
 import { BoxingInput, toInputEvents } from "../input/boxingInput";
 import { FightLogic, STEP_MS, type PlayerDefense } from "../logic/fight";
-import { fightConfig } from "../logic/fightConfig";
+import { fightConfig, type FightFormat } from "../logic/fightConfig";
+import { describeResult, saveFight, type BoxingFightStats } from "../record";
+import { BoxingSound } from "../render/sound";
+import { loadBoxingSettings } from "../settings";
 import { seededRng } from "../logic/rng";
 import { CanvasBoxingRenderer } from "../render/canvas2d/canvasRenderer";
 import type { GloveView, PlayerView } from "../render/renderer";
@@ -46,6 +51,12 @@ export class FightScreen implements Screen {
   private foundSince: number | null = null;
   private overAt: number | null = null;
   private overlay!: HTMLElement;
+  private format!: FightFormat;
+  private audio: AudioEngine | null = null;
+  private sound: BoxingSound | null = null;
+  private startedAt = new Date();
+  private saved: { stats: BoxingFightStats; previousBest: BoxingFightStats | null; newBest: boolean } | null = null;
+  private restShownSecs = -1;
 
   constructor(
     private readonly app: AppContext,
@@ -63,6 +74,12 @@ export class FightScreen implements Screen {
       return;
     }
 
+    const bs = loadBoxingSettings(this.app.storage);
+    this.format = { rounds: bs.rounds, roundMs: bs.roundMinutes * 60_000, restMs: bs.restSeconds * 1000 };
+    if (bs.sound) {
+      this.audio = new AudioEngine(this.app.settings.get().volume);
+      this.sound = new BoxingSound(this.audio);
+    }
     this.overlay = h("div", { class: "fight-overlay", hidden: true });
     this.renderer = new CanvasBoxingRenderer(this.canvas, this.fighter);
     this.input = new BoxingInput(boxingConfig, this.calibration.stance, defenseBaseline(this.profile, this.calibration));
@@ -92,6 +109,7 @@ export class FightScreen implements Screen {
 
   unmount(): void {
     cancelAnimationFrame(this.raf);
+    this.audio?.close();
     this.stage?.unmount();
     this.root.replaceChildren();
   }
@@ -100,6 +118,10 @@ export class FightScreen implements Screen {
     if (!this.stage) {
       if (e.code === "KeyK") this.app.navigate({ name: "boxingCalibration" });
       else if (e.code === "Escape") this.app.navigate({ name: "hub" });
+      return true;
+    }
+    if (this.logic.state.phase === "rest" && !this.paused && (e.code === "Enter" || e.code === "Space")) {
+      this.logic.skipRest();
       return true;
     }
     if (this.overAt !== null && this.logic.state.phase === "over") {
@@ -122,8 +144,11 @@ export class FightScreen implements Screen {
   // ---- fight lifecycle ----
 
   private newFight(): void {
-    this.logic = new FightLogic(this.fighter, fightConfig, seededRng(Date.now() & 0xffffffff));
+    this.logic = new FightLogic(this.fighter, fightConfig, seededRng(Date.now() & 0xffffffff), this.format);
     this.punches = [];
+    this.startedAt = new Date();
+    this.saved = null;
+    this.restShownSecs = -1;
     this.acc = 0;
     this.overAt = null;
     this.paused = null;
@@ -135,7 +160,8 @@ export class FightScreen implements Screen {
   }
 
   private pause(kind: "menu" | "tracking"): void {
-    if (this.logic.state.phase === "over") return;
+    const phase = this.logic.state.phase;
+    if (phase === "over" || (kind === "tracking" && phase === "rest")) return;
     this.paused = kind;
     this.overlay.hidden = false;
     this.overlay.replaceChildren(
@@ -162,8 +188,9 @@ export class FightScreen implements Screen {
     this.frame = f;
     const r = this.input.update(f);
     for (const e of toInputEvents(r)) this.app.events.emit(e);
-    // Punches thrown while paused or before the bell don't count.
-    if (!this.paused && this.logic.state.phase === "fighting") this.punches.push(...r.punches);
+    // Punches count while fighting, and toward getting up when knocked down.
+    const phase = this.logic.state.phase;
+    if (!this.paused && (phase === "fighting" || phase === "knockdown")) this.punches.push(...r.punches);
     this.defense = { guard: r.signals.guard, slip: r.signals.slip, duck: r.signals.duck };
 
     // Lost tracking mid-fight pauses; being seen again resumes.
@@ -175,7 +202,8 @@ export class FightScreen implements Screen {
     } else {
       this.foundSince = null;
       this.lostSince ??= t;
-      if (!this.paused && this.logic.state.phase === "fighting" && t - this.lostSince >= fightConfig.lostTrackingPauseMs) {
+      const live = this.logic.state.phase === "fighting" || this.logic.state.phase === "knockdown";
+      if (!this.paused && live && t - this.lostSince >= fightConfig.lostTrackingPauseMs) {
         this.pause("tracking");
       }
     }
@@ -208,7 +236,9 @@ export class FightScreen implements Screen {
       let steps = 0;
       while (this.acc >= STEP_MS && steps < MAX_STEPS_PER_FRAME) {
         this.logic.step({ punches: this.punches.splice(0), defense: this.defense });
-        this.renderer.onEvents(this.logic.drainEvents(), now);
+        const events = this.logic.drainEvents();
+        this.renderer.onEvents(events, now);
+        this.sound?.onEvents(events);
         this.acc -= STEP_MS;
         steps++;
       }
@@ -216,35 +246,85 @@ export class FightScreen implements Screen {
     }
     this.renderer.render(this.logic.state, this.playerView(), now);
 
-    if (this.logic.state.phase === "over") {
+    const phase = this.logic.state.phase;
+    if (phase === "rest" && !this.paused) this.showRest();
+    else if (this.restShownSecs >= 0 && phase !== "rest") {
+      this.restShownSecs = -1;
+      if (!this.paused) this.overlay.hidden = true;
+    }
+    if (phase === "over") {
+      if (!this.saved) {
+        this.saved = saveFight(this.app.storage, new SessionHistory(this.app.storage), this.logic.state, this.fighter.id, this.fighter.name, this.startedAt);
+      }
       this.overAt ??= now;
       if (now - this.overAt > RESULTS_DELAY_MS && this.overlay.hidden) this.showResults();
     }
   }
 
-  private showResults(): void {
+  /** Between rounds: the round's numbers and a countdown. */
+  private showRest(): void {
     const s = this.logic.state;
-    const won = s.result?.winner === "player";
-    const secs = Math.round((s.result?.timeMs ?? s.time) / 1000 - fightConfig.countdownMs / 1000);
-    const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
-    const st = s.stats;
-    const pct = st.thrown ? Math.round((st.landed / st.thrown) * 100) : 0;
+    const secs = Math.ceil(s.restLeft / 1000);
+    if (secs === this.restShownSecs) return;
+    this.restShownSecs = secs;
+    const r = s.rounds[s.round - 1]!;
     const row = (k: string, v: string) => h("div", { class: "debug-row" }, h("span", {}, k), h("b", {}, v));
-    const hint = !won && this.fighter.weaknesses.length ? this.fighter.weaknesses[Math.floor(Math.random() * this.fighter.weaknesses.length)]! : null;
     this.overlay.hidden = false;
     this.overlay.replaceChildren(
       h(
         "div",
         { class: "fight-panel" },
-        h("h2", {}, won ? `You beat ${this.fighter.name}` : `${this.fighter.name} wins`),
-        h("p", { class: "fight-sub" }, `KO at ${time}`),
+        h("h2", {}, `End of round ${s.round}`),
+        h("p", { class: "fight-sub" }, r.score ? `Judges: you ${r.score.player} – ${r.score.opponent} ${this.fighter.name}` : ""),
         h(
           "div",
           { class: "cal-summary" },
-          row("Punches landed", `${st.landed} of ${st.thrown} (${pct}%)`),
-          row("Counters", String(st.counters)),
-          row("Attacks beaten", String(st.defended)),
-          row("Damage dealt / taken", `${Math.round(st.damageDealt)} / ${Math.round(st.damageTaken)}`),
+          row("Punches landed", `${r.punchesLanded} of ${r.punchesThrown}`),
+          row("Damage dealt / taken", `${Math.round(r.damageDealt)} / ${Math.round(r.damageTaken)}`),
+          row("Knockdowns", `${r.knockdownsScored} scored, ${r.knockdownsSuffered} suffered`),
+        ),
+        h("p", { class: "fight-rest-count" }, `Round ${s.round + 1} in ${secs}`),
+        h("p", {}, "Catch your breath. ", h("kbd", {}, "Enter"), " when you're ready."),
+      ),
+    );
+  }
+
+  private showResults(): void {
+    const saved = this.saved;
+    if (!saved) return;
+    const b = saved.stats;
+    const won = b.winner === "player";
+    const pct = (landed: number, thrown: number) => (thrown ? `${Math.round((landed / thrown) * 100)}%` : "-");
+    const fmtTime = (ms: number) => {
+      const secs = Math.round(ms / 1000);
+      return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+    };
+    const row = (k: string, v: string) => h("div", { class: "debug-row" }, h("span", {}, k), h("b", {}, v));
+    const byType = (["jab", "cross", "hook", "uppercut"] as const).map((t) =>
+      row(`  ${t}`, `${b.landedByType[t] ?? 0} / ${b.thrownByType[t] ?? 0} (${pct(b.landedByType[t] ?? 0, b.thrownByType[t] ?? 0)})`),
+    );
+    const how = b.method === "Decision" ? `Decision ${b.scores!.player}–${b.scores!.opponent}` : `${b.method} in round ${b.round} at ${fmtTime(b.roundTimeMs)}`;
+    const prev = saved.previousBest;
+    const hint = !won && this.fighter.weaknesses.length ? this.fighter.weaknesses[Math.floor(Math.random() * this.fighter.weaknesses.length)]! : null;
+    this.overlay.hidden = false;
+    this.overlay.replaceChildren(
+      h(
+        "div",
+        { class: "fight-panel fight-results" },
+        h("h2", {}, b.winner === "draw" ? "Draw" : won ? `You beat ${this.fighter.name}` : `${this.fighter.name} wins`),
+        h("p", { class: "fight-sub" }, how, saved.newBest && prev ? " · new best!" : ""),
+        h(
+          "div",
+          { class: "cal-summary" },
+          row("Punches landed", `${b.landed} of ${b.thrown} (${pct(b.landed, b.thrown)})`),
+          ...byType,
+          row("Counters", String(b.counters)),
+          row("Attacks beaten", `guard ${b.defendedBy.guard ?? 0} · slip ${b.defendedBy.slip ?? 0} · duck ${b.defendedBy.duck ?? 0}`),
+          row("Damage dealt / taken", `${b.damageDealt} / ${b.damageTaken}`),
+          row("Knockdowns", `${b.knockdownsScored} scored, ${b.knockdownsSuffered} suffered`),
+          row("Punches per minute", String(b.punchesPerMinute)),
+          row("Active time", fmtTime(b.activeMs)),
+          row("Previous best", prev ? describeResult(prev, this.fighter.name) : "First fight"),
         ),
         hint ? h("p", { class: "fight-hint" }, `Tip: ${hint}`) : null,
         h("p", {}, h("kbd", {}, "Enter"), " rematch   ", h("kbd", {}, "Esc"), " hub"),
@@ -257,7 +337,8 @@ export class FightScreen implements Screen {
     const o = s.opponent;
     const d = this.defense;
     return [
-      ["Fight", `${s.phase} · ${(s.time / 1000).toFixed(1)}s`],
+      ["Fight", `${s.phase} · round ${s.round} · ${(s.roundLeft / 1000).toFixed(0)}s left`],
+      ["Stamina", `${Math.round(s.player.stamina)}${s.player.exhausted ? " (exhausted)" : ""}`],
       ["Opponent", `${o.name}${o.attack ? ` (${o.attack.id})` : ""} ${Math.round(o.t)}ms`],
       ["Health you / him", `${Math.round(s.player.health)} / ${Math.round(o.health)}`],
       ["Defense", `${d.guard} ${d.slip ? `slip-${d.slip}` : ""} ${d.duck ? "duck" : ""}`],

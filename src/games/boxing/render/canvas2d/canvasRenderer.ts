@@ -1,5 +1,6 @@
 import type { FighterData } from "../../data/fighter";
-import type { FightEvent, FightState, OpponentState } from "../../logic/fight";
+import { FULL_COUNT, type FightEvent, type FightState, type OpponentState } from "../../logic/fight";
+import { fightConfig } from "../../logic/fightConfig";
 import type { BoxingRenderer, GloveView, PlayerView } from "../renderer";
 import { CLIPS, sampleClip } from "./animations";
 import { BASE_POSE, drawPuppet, lerpPose, type Pose } from "./puppet";
@@ -39,8 +40,21 @@ export class CanvasBoxingRenderer implements BoxingRenderer {
   onEvents(events: readonly FightEvent[], now: number): void {
     for (const e of events) {
       switch (e.type) {
-        case "fight-start":
-          this.pop("FIGHT!", "#ffd23f", 150, now, 900, 0.42);
+        case "round-start":
+          this.pop(e.round === 1 ? "FIGHT!" : `ROUND ${e.round}`, "#ffd23f", 150, now, 1100, 0.42);
+          break;
+        case "round-end":
+          this.pop("END OF ROUND", "#ffffff", 100, now, 1800, 0.42);
+          break;
+        case "too-tired":
+          this.pop("TOO TIRED", "#9aa6bd", 70, now, 800, 0.62);
+          break;
+        case "knockdown":
+          this.pop(e.who === "opponent" ? "DOWN!" : "YOU'RE DOWN!", "#ff5a5a", 140, now, 1400, 0.3);
+          this.shake = { start: now, ms: 500, amp: 26 };
+          break;
+        case "get-up":
+          this.pop(e.who === "player" ? "BACK UP!" : "HE'S UP", "#ffd23f", 110, now, 1200, 0.3);
           break;
         case "punch-landed":
           if (e.counter) {
@@ -71,9 +85,11 @@ export class CanvasBoxingRenderer implements BoxingRenderer {
         case "stunned":
           this.pop("STUNNED!", "#ffd23f", 100, now, 1200, 0.3);
           break;
-        case "ko":
-          this.pop(e.winner === "player" ? "K.O.!" : "DOWN!", "#ff5a5a", 200, now, 2500, 0.42);
+        case "fight-over": {
+          const text = e.method === "Decision" ? "DECISION" : e.method === "TKO" ? "T.K.O.!" : "K.O.!";
+          this.pop(text, e.winner === "player" ? "#ffd23f" : "#ff5a5a", 200, now, 2500, 0.42);
           break;
+        }
       }
     }
   }
@@ -103,12 +119,16 @@ export class CanvasBoxingRenderer implements BoxingRenderer {
     this.drawGloves(view, w, h);
     ctx.restore();
 
+    // Low stamina: the edges of your vision darken.
+    if (state.player.stamina < fightConfig.lowStamina || state.player.exhausted) this.vignette(w, h, state.player.exhausted ? 0.75 : 0.5);
     this.drawEdgeFlash(w, h, now);
+    if (state.phase === "knockdown" && state.knockdown?.who === "player") this.vignette(w, h, 0.85);
     this.drawHud(state, w, h, dpr);
     if (state.phase === "countdown") {
       const n = Math.ceil(state.countdownLeft / 1000);
       this.text(String(Math.max(1, n)), w / 2, h * 0.42, 200 * dpr, "#ffffff");
     }
+    this.drawKnockdown(state, w, h, dpr);
     this.drawPops(w, h, now, dpr);
   }
 
@@ -164,7 +184,10 @@ export class CanvasBoxingRenderer implements BoxingRenderer {
       case "stunned":
         return { name: "stunned", k: 0, loopMs: CLIPS.stunned!.loopMs };
       case "ko":
+      case "knockdown":
         return { name: "ko", k: Math.min(1, o.t / 1400) };
+      case "getup":
+        return { name: "ko", k: Math.max(0, 1 - k) };
       case "victory":
         return { name: "victory", k: 0, loopMs: CLIPS.victory!.loopMs };
     }
@@ -243,13 +266,64 @@ export class CanvasBoxingRenderer implements BoxingRenderer {
     };
     bar(pad, p, this.trail.player, "#3ee07a", false);
     bar(w - pad - bw, o, this.trail.opponent, "#ff5a5a", true);
+    // Stamina: a thinner bar under each health bar.
+    const sh = bh * 0.4, sy = top + bh + 8 * dpr;
+    const stam = (x: number, frac: number, color: string, rightAligned: boolean) => {
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(x, sy, bw, sh);
+      ctx.fillStyle = color;
+      ctx.fillRect(rightAligned ? x + bw * (1 - frac) : x, sy, bw * frac, sh);
+    };
+    const pl = state.player;
+    const playerStamColor = pl.exhausted ? "#777" : pl.stamina < fightConfig.lowStamina ? "#ff8c42" : "#ffd23f";
+    stam(pad, pl.stamina / pl.staminaMax, playerStamColor, false);
+    stam(w - pad - bw, state.opponent.stamina / state.opponent.staminaMax, "#ffd23f", true);
     ctx.font = `700 ${Math.round(h * 0.03)}px system-ui, sans-serif`;
     ctx.fillStyle = "#ffffff";
     ctx.textBaseline = "top";
     ctx.textAlign = "left";
-    ctx.fillText("YOU", pad, top + bh + 10 * dpr);
+    ctx.fillText("YOU", pad, sy + sh + 8 * dpr);
     ctx.textAlign = "right";
-    ctx.fillText(this.fighter.name.toUpperCase(), w - pad, top + bh + 10 * dpr);
+    ctx.fillText(this.fighter.name.toUpperCase(), w - pad, sy + sh + 8 * dpr);
+
+    // Round and clock, top center.
+    const secs = Math.max(0, Math.ceil(state.roundLeft / 1000));
+    const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+    ctx.textAlign = "center";
+    ctx.font = `600 ${Math.round(h * 0.025)}px system-ui, sans-serif`;
+    ctx.fillStyle = "#9aa6bd";
+    ctx.fillText(`ROUND ${state.round} OF ${state.format.rounds}`, w / 2, top - 6 * dpr);
+    ctx.font = `800 ${Math.round(h * 0.055)}px ui-monospace, monospace`;
+    ctx.fillStyle = secs <= 10 && state.phase === "fighting" ? "#ff5a5a" : "#ffffff";
+    ctx.fillText(state.phase === "rest" ? "REST" : clock, w / 2, top + h * 0.022);
+  }
+
+  private vignette(w: number, h: number, strength: number): void {
+    const ctx = this.ctx;
+    const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.max(w, h) * 0.7);
+    g.addColorStop(0, "rgba(0,0,0,0)");
+    g.addColorStop(1, `rgba(0,0,0,${strength})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  /** The referee's count, and your get-up meter when you're the one down. */
+  private drawKnockdown(state: Readonly<FightState>, w: number, h: number, dpr: number): void {
+    const kd = state.knockdown;
+    if (state.phase !== "knockdown" || !kd || kd.resumeLeft !== null) return;
+    const ctx = this.ctx;
+    this.text(kd.count > 0 ? String(Math.min(kd.count, FULL_COUNT)) : "", w / 2, h * 0.5, 260 * (h / 900), "#ffffff");
+    if (kd.who === "opponent") {
+      this.text("STAY DOWN!", w / 2, h * 0.7, 70 * (h / 900), "#ffd23f");
+      return;
+    }
+    this.text("PUNCH TO GET UP!", w / 2, h * 0.7, 80 * (h / 900), "#ffd23f");
+    const bw = w * 0.5, bh = h * 0.04, x = (w - bw) / 2, y = h * 0.78;
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(x - 4 * dpr, y - 4 * dpr, bw + 8 * dpr, bh + 8 * dpr);
+    ctx.fillStyle = "#3ee07a";
+    ctx.fillRect(x, y, bw * (kd.getUp / kd.getUpNeeded), bh);
+    this.text(`${kd.getUp} / ${kd.getUpNeeded}`, w / 2, y + bh * 2.2, 40 * (h / 900), "#ffffff");
   }
 
   private drawEdgeFlash(w: number, h: number, now: number): void {

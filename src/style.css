@@ -169,3 +169,7 @@ button.primary { background: #1f6f45; border-color: #3ee07a; }
 .fight-panel h2 { font-size: 56px; margin: 0 0 8px; }
 .fight-sub { color: var(--muted); margin: 0 0 18px; }
 .fight-hint { color: #ffd23f; font-size: 24px; }
+.fight-rest-count { font-size: 40px; font-weight: 800; margin: 18px 0 6px; }
+.fight-results .cal-summary { font-size: 17px; }
+.settings h2 { margin: 12px 0 0; font-size: 28px; }
+.settings { overflow-y: auto; max-height: 100vh; }

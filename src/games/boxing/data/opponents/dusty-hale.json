@@ -4,13 +4,14 @@
   "nickname": "The Tumbleweed",
   "style": "Slow and sloppy. Big tells, long openings.",
   "stats": {
-    "health": 80,
+    "health": 100,
     "power": 0.7,
     "windupMs": 900,
     "guardChance": 0.3,
     "staminaMax": 100,
     "recoveryMs": 1100,
-    "restMs": [1300, 2400]
+    "restMs": [1300, 2400],
+    "getUpCounts": [6, 8]
   },
   "guard": "high",
   "attacks": [

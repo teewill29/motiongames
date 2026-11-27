@@ -59,6 +59,11 @@ export interface FighterData {
     recoveryMs: number;
     /** Pause between attack patterns, ms (min and max). */
     restMs: [number, number];
+    /**
+     * Count (1-9) at which he gets up from his 1st, 2nd, ... knockdown. A
+     * knockdown past the end of the list, or a count of 10 or more, is a KO.
+     */
+    getUpCounts: number[];
   };
   /** Which punches his guard blocks: high blocks head shots, low blocks body shots. */
   guard: "high" | "low" | "mixed";
@@ -89,5 +94,8 @@ export function validateFighter(f: FighterData): FighterData {
   if (!(f.stats.health > 0)) throw new FighterDataError(`${f.id}: health must be positive`);
   const r = f.stats.restMs;
   if (!Array.isArray(r) || r.length !== 2 || !(r[0] <= r[1])) throw new FighterDataError(`${f.id}: restMs must be [min, max]`);
+  if (!Array.isArray(f.stats.getUpCounts) || f.stats.getUpCounts.some((c) => !(c >= 1))) {
+    throw new FighterDataError(`${f.id}: getUpCounts must be counts of 1 or more`);
+  }
   return f;
 }

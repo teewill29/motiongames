@@ -4,7 +4,7 @@ Webcam motion-controlled games for the living room TV. Stand in front of the cam
 
 | Game | Status | Spec |
 | --- | --- | --- |
-| Boxing | Phase 2: playable fight vs. Dusty Hale | [docs/boxing.md](docs/boxing.md) |
+| Boxing | Phase 3: full 3-round fights vs. Dusty Hale | [docs/boxing.md](docs/boxing.md) |
 | Treadmill Runner | Planned | [docs/treadmill-runner.md](docs/treadmill-runner.md) |
 
 Shared systems: [docs/architecture.md](docs/architecture.md)
