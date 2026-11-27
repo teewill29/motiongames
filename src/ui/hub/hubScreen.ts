@@ -33,15 +33,16 @@ export class HubScreen implements Screen {
       return el;
     };
 
+    const fight = () => this.app.navigate({ name: "boxingFight", fighterId: "dusty-hale" });
     const grid = h(
       "div",
       { class: "tiles" },
-      tile("Boxing", "Fights arrive in Phase 2", null),
-      tile("Boxing: Detection Test", "Every punch and defense, labeled live", () => this.app.navigate({ name: "boxingDetection", mode: { kind: "live" } }), "1"),
-      tile("Boxing: Calibrate", "Stance, reach, guard, punches, slips", () => this.app.navigate({ name: "boxingCalibration" }), "2"),
-      tile("Pose Test", "Camera, skeleton and recorder", () => this.app.navigate({ name: "poseTest", mode: { kind: "live" } }), "3"),
-      tile("Replay", "Load a recorded pose session", () => this.fileInput.click(), "4"),
-      tile("Settings", "Camera and tracking model", () => this.app.navigate({ name: "settings" }), "5"),
+      tile("Boxing", "Fight Dusty Hale", fight, "1"),
+      tile("Boxing: Detection Test", "Every punch and defense, labeled live", () => this.app.navigate({ name: "boxingDetection", mode: { kind: "live" } }), "2"),
+      tile("Boxing: Calibrate", "Stance, reach, guard, punches, slips", () => this.app.navigate({ name: "boxingCalibration" }), "3"),
+      tile("Pose Test", "Camera, skeleton and recorder", () => this.app.navigate({ name: "poseTest", mode: { kind: "live" } }), "4"),
+      tile("Replay", "Load a recorded pose session", () => this.fileInput.click(), "5"),
+      tile("Settings", "Camera and tracking model", () => this.app.navigate({ name: "settings" }), "6"),
       tile("Treadmill Runner", "Planned", null),
     );
 
@@ -63,11 +64,12 @@ export class HubScreen implements Screen {
 
   onKey(e: KeyboardEvent): boolean {
     const routes: Record<string, () => void> = {
-      "1": () => this.app.navigate({ name: "boxingDetection", mode: { kind: "live" } }),
-      "2": () => this.app.navigate({ name: "boxingCalibration" }),
-      "3": () => this.app.navigate({ name: "poseTest", mode: { kind: "live" } }),
-      "4": () => this.fileInput.click(),
-      "5": () => this.app.navigate({ name: "settings" }),
+      "1": () => this.app.navigate({ name: "boxingFight", fighterId: "dusty-hale" }),
+      "2": () => this.app.navigate({ name: "boxingDetection", mode: { kind: "live" } }),
+      "3": () => this.app.navigate({ name: "boxingCalibration" }),
+      "4": () => this.app.navigate({ name: "poseTest", mode: { kind: "live" } }),
+      "5": () => this.fileInput.click(),
+      "6": () => this.app.navigate({ name: "settings" }),
     };
     const go = routes[e.key];
     if (go) {

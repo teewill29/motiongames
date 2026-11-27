@@ -31,6 +31,12 @@ export interface PoseStageOptions {
   stats?(frame: BodyFrame | null): [string, string][];
   /** Darken the camera image (0 to 1) so big text on top reads well. */
   dim?: number;
+  /**
+   * "full": camera fills the screen (default). "pip": transparent stage with
+   * the camera and skeleton small in the bottom-right corner, so a game can
+   * draw underneath.
+   */
+  layout?: "full" | "pip";
   /** Game-specific data saved in recordings (calibration, stance). */
   recordingContext?(): Record<string, unknown> | undefined;
   /** Label for the next recording (sets its file name). */
@@ -246,13 +252,21 @@ export class PoseStage {
       this.canvas.height = ch;
     }
     const ctx = this.ctx;
-    ctx.fillStyle = "#0b0d12";
-    ctx.fillRect(0, 0, cw, ch);
-
     const frame = this.pipeline.latest;
     const aspect =
       this.video.videoWidth > 0 ? this.video.videoWidth / this.video.videoHeight : (frame?.imageAspect ?? 16 / 9);
-    const rect = containRect(cw, ch, aspect);
+    const pip = this.opts.layout === "pip";
+    let rect = containRect(cw, ch, aspect);
+    if (pip) {
+      ctx.clearRect(0, 0, cw, ch);
+      const pw = cw * 0.2;
+      rect = { x: cw - pw - cw * 0.015, y: ch - pw / aspect - ch * 0.03, w: pw, h: pw / aspect };
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(rect.x - 4, rect.y - 4, rect.w + 8, rect.h + 8);
+    } else {
+      ctx.fillStyle = "#0b0d12";
+      ctx.fillRect(0, 0, cw, ch);
+    }
 
     if (this.opts.mode.kind === "live" && this.video.readyState >= 2) {
       ctx.save();
@@ -271,7 +285,8 @@ export class PoseStage {
     }
 
     const debug = this.debug.visible;
-    if (frame && debug) drawSkeleton(ctx, frame, rect, poseConfig.minVisibility);
+    // In picture-in-picture the skeleton is the player's feedback, so it's always on.
+    if (frame && (debug || pip)) drawSkeleton(ctx, frame, rect, poseConfig.minVisibility);
     this.opts.draw?.(ctx, rect, frame, debug);
 
     this.updateRecBadge();

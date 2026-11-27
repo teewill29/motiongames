@@ -1,0 +1,47 @@
+{
+  "id": "dusty-hale",
+  "name": "Dusty Hale",
+  "nickname": "The Tumbleweed",
+  "style": "Slow and sloppy. Big tells, long openings.",
+  "stats": {
+    "health": 80,
+    "power": 0.7,
+    "windupMs": 900,
+    "guardChance": 0.3,
+    "staminaMax": 100,
+    "recoveryMs": 1100,
+    "restMs": [1300, 2400]
+  },
+  "guard": "high",
+  "attacks": [
+    {
+      "id": "jab",
+      "name": "Lazy jab",
+      "kind": "straight",
+      "tell": "jab",
+      "windupMs": 900,
+      "strikeMs": 180,
+      "damage": 6,
+      "beatenBy": { "guard": 0, "slip": 0 }
+    },
+    {
+      "id": "hook-right",
+      "name": "Barn-door hook",
+      "kind": "hook",
+      "tell": "hook-right",
+      "windupMs": 1100,
+      "strikeMs": 260,
+      "damage": 12,
+      "beatenBy": { "duck": 0, "guard": 0.3 }
+    }
+  ],
+  "patterns": [
+    { "weight": 3, "sequence": ["jab"] },
+    { "weight": 2, "sequence": ["hook-right"] },
+    { "weight": 1, "sequence": ["jab", "jab"] }
+  ],
+  "roundBehavior": { "1": 1 },
+  "weaknesses": ["Drops his whole body into the hook. Duck it and he's wide open.", "His jab comes slow. Slip it and fire back."],
+  "taunts": ["That all you got?", "I've had worse from my grandma.", "Come on, kid."],
+  "art": { "puppet": "placeholder", "skin": "#c99a6b", "trunks": "#7a3b2e", "gloves": "#b8312f", "hair": "#5a3a1a" }
+}

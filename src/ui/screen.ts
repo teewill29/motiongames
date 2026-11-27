@@ -18,6 +18,7 @@ export type Route =
   | { name: "settings" }
   | { name: "poseTest"; mode: StageMode }
   | { name: "boxingCalibration" }
+  | { name: "boxingFight"; fighterId: string }
   | { name: "boxingDetection"; mode: StageMode };
 
 export interface Screen {

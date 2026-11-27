@@ -159,3 +159,13 @@ button.primary { background: #1f6f45; border-color: #3ee07a; }
 }
 .det-rec span { color: var(--muted); }
 .stage-root:has(.replay-bar) ~ .det-counters { bottom: 96px; }
+
+/* Fight */
+.fight-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); }
+.fight-panel {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 28px 40px; text-align: center;
+  min-width: min(640px, 90vw); font-size: 22px;
+}
+.fight-panel h2 { font-size: 56px; margin: 0 0 8px; }
+.fight-sub { color: var(--muted); margin: 0 0 18px; }
+.fight-hint { color: #ffd23f; font-size: 24px; }

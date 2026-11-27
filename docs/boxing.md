@@ -232,6 +232,13 @@ Dusty Hale as a placeholder puppet, with health bars, the opponent state machine
 
 **Done when:** a full fight against Dusty is playable and the read, defend, counter loop feels fair.
 
+**Implementation notes:**
+- Dusty's two attacks: a lazy jab (guard or slip beats it) and a barn-door right hook (duck beats it; guard lets 30% through). Both have long, exaggerated tells, and the attacking glove glows during the wind-up.
+- Your defense counts if you held it at any moment in the 300 ms before impact (`fightConfig.defenseWindowMs`), which covers tracking lag.
+- A slip or duck makes him miss and stumble into `open`; a clean block leaves him open for 60% as long. Counters in `open` deal double.
+- Any detected punch can land; the type only changes damage. Punch-type detection isn't perfect, and the fight shouldn't punish that.
+- Fight rules are tunable live under "Fight rules" in the debug overlay.
+
 ### Phase 3: Full fight systems
 
 Stamina, rounds with rests, knockdowns and the get-up meter, all win types, the HUD, sound and the post-fight stats screen.

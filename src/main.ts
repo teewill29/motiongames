@@ -10,6 +10,9 @@ import { deriveBoxingConfig } from "./games/boxing/calibration/derive";
 import { BOXING_SPEC_DEFAULTS, boxingConfig, boxingConfigSpecs } from "./games/boxing/config";
 import { BoxingCalibrationScreen } from "./games/boxing/ui/calibrationScreen";
 import { DetectionTestScreen } from "./games/boxing/ui/detectionTestScreen";
+import { FightScreen } from "./games/boxing/ui/fightScreen";
+import { fightConfig, fightConfigSpecs } from "./games/boxing/logic/fightConfig";
+import { fighterById, ROSTER } from "./games/boxing/data/roster";
 import { HubScreen } from "./ui/hub/hubScreen";
 import { PoseTestScreen } from "./ui/posetest/poseTestScreen";
 import type { AppContext, Route, Screen } from "./ui/screen";
@@ -17,6 +20,7 @@ import { SettingsScreen } from "./ui/settings/settingsScreen";
 
 const storage = new LocalStorageStore();
 const tunables = new TunableRegistry(storage);
+tunables.register("fight", "Fight rules", fightConfig, fightConfigSpecs);
 tunables.register("boxing", "Boxing detection", boxingConfig, boxingConfigSpecs);
 tunables.register("pose", "Pose smoothing", poseConfig, poseConfigSpecs);
 tunables.register("calibration", "Calibration", calibrationConfig, calibrationConfigSpecs);
@@ -51,6 +55,8 @@ function createScreen(route: Route): Screen {
       return new BoxingCalibrationScreen(app);
     case "boxingDetection":
       return new DetectionTestScreen(app, route.mode);
+    case "boxingFight":
+      return new FightScreen(app, fighterById(route.fighterId) ?? ROSTER[0]!);
   }
 }
 
