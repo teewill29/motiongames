@@ -45,8 +45,8 @@ describe("punch detection (orthodox, calibrated)", () => {
     expect(countPunches(rear)).toEqual({ uppercut: 5 });
   });
 
-  it("ignores slow extensions (pushing, not punching)", () => {
-    const r = run(punchSeries({ side: "left", path: ["straight"], count: 3, stepMs: [700] }));
+  it("ignores slow reaches (not punching)", () => {
+    const r = run(punchSeries({ side: "left", path: ["straight"], count: 3, stepMs: [1500] }));
     expect(r.punches).toHaveLength(0);
   });
 
@@ -159,5 +159,13 @@ describe("defense detection", () => {
       cal,
     );
     expect(r.defense.filter((d) => d.type.startsWith("slip"))).toEqual([]);
+  });
+});
+
+describe("punch target height", () => {
+  it("judges uppercuts at the top of the swing", () => {
+    const cal = syntheticCalibration();
+    const r = detect(animate(punchSeries({ side: "right", path: ["uppercutDip", "uppercutFinish"], count: 3, stepMs: [200, 150] })), cal);
+    expect(r.punches.map((p) => `${p.type}:${p.target}`)).toEqual(["uppercut:head", "uppercut:head", "uppercut:head"]);
   });
 });

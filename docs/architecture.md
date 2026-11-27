@@ -69,16 +69,19 @@ Every pose result becomes a `BodyFrame`:
 
 - `timestamp` (ms)
 - landmarks smoothed with a One Euro filter (tunable; low lag matters more than perfect smoothness)
-- `shoulderWidth` (this frame's) and `scale`, the base unit of distance: the widest shoulder width over the last 1.5 s. Turning the torso to punch shrinks the 2D shoulder width by up to 40%; the window max ignores that and still follows the player stepping closer or farther.
+- `shoulderWidth` (this frame's) and `scale`, the base unit of distance: a facing-the-camera shoulder width. Each frame takes the larger of the shoulder width and torso length × the player's calibrated shoulder/torso ratio, then the max over 1.5 s. A fighting stance turns the shoulders and shrinks the 2D shoulder width by about 20% for as long as it's held; the torso term covers that.
 - `shoulderMid`, `hipMid`, `torsoLength`
 - per-arm `extension` = shoulder-to-wrist distance / calibrated arm length (0 = fist at shoulder, 1 = arm straight)
-- per-arm `elbowAngle` in degrees
+- per-arm `elbowAngle` in degrees (from world landmarks; unreliable for arms pointed at the camera)
+- per-arm `upperArmRatio`: on-screen upper arm length over its calibrated side-on length. About 1 when the arm hangs or points sideways, about 0.2 to 0.4 when it points at the camera. Purely 2D.
 - per-wrist velocity in scale units per second, x and y, both on screen and relative to the shoulder midpoint (`wristVelocityBody`). Detectors use the body-relative one, so slipping or ducking with the hands up doesn't read as a hook or uppercut.
 - `shoulderTilt` in degrees
 - `visibility` flags, so detectors can ignore low-confidence landmarks
 - `tracked: boolean`, false when no pose was found or key landmarks have low visibility
 
 Games read `BodyFrame`s and never raw MediaPipe output.
+
+**Depth is unreliable.** MediaPipe's z and world landmarks badly underestimate an arm pointed at the camera, and they couple the two arms: when one hand jabs, the other often appears to extend in depth too. Detectors should rely on 2D signals and use depth only as supporting evidence.
 
 ## Calibration
 

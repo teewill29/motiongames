@@ -8,8 +8,14 @@ import type { BoxingCalibration, PunchSample } from "./boxingCalibration";
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-/** Smallest guard-to-peak gap that still gives usable thresholds. Below it, defaults stay. */
-const MIN_EXTENSION_GAP = 0.05;
+/** Smallest guard-to-punch upper arm ratio gap that still gives usable thresholds. Below it, defaults stay. */
+const MIN_RATIO_GAP = 0.15;
+/** Extra room (scale units) below the calibrated punches' lowest elbow. */
+const ELBOW_DROP_ROOM = 0.15;
+/** Extra room (scale units) below the calibrated punches' lowest wrist that still counts as a head shot. */
+const HEAD_ROOM = 0.15;
+/** Floor for the slip threshold: punches move the head this much on their own. */
+const MIN_SLIP_THRESHOLD = 0.25;
 /** Extra room (scale units) below the calibrated guard's lowest wrist. */
 const GUARD_DROP_ROOM = 0.15;
 
@@ -26,28 +32,31 @@ export function deriveBoxingConfig(
   const lead = leadSide(cal.stance);
   const rear = lead === "left" ? "right" : "left";
 
-  const straight = (guardExt: number, samples: PunchSample[]) => {
+  // Straights: thresholds sit between the hand's guard ratio and its calibrated punches.
+  const straight = (guardRatio: number, samples: PunchSample[]) => {
     if (samples.length === 0) return null;
-    const peak = median(samples.map((s) => s.peakExt));
-    const gap = peak - guardExt;
-    if (gap < MIN_EXTENSION_GAP) return null;
-    return { start: guardExt + dc.startFraction * gap, peak: guardExt + dc.peakFraction * gap };
+    const punch = median(samples.map((s) => s.minRatio));
+    const gap = guardRatio - punch;
+    if (gap < MIN_RATIO_GAP) return null;
+    return { start: guardRatio - dc.startFraction * gap, peak: guardRatio - dc.peakFraction * gap };
   };
-  const jab = straight(cal.guard[lead].ext, cal.punches.jab);
+  const jab = straight(cal.guard[lead].upperRatio, cal.punches.jab);
   if (jab) {
-    out.jabStartExt = jab.start;
-    out.jabPeakExt = jab.peak;
+    out.jabStartRatio = jab.start;
+    out.jabPeakRatio = jab.peak;
   }
-  const cross = straight(cal.guard[rear].ext, cal.punches.cross);
+  const cross = straight(cal.guard[rear].upperRatio, cal.punches.cross);
   if (cross) {
-    out.crossStartExt = cross.start;
-    out.crossPeakExt = cross.peak;
+    out.crossStartRatio = cross.start;
+    out.crossPeakRatio = cross.peak;
   }
 
   const all = [...cal.punches.jab, ...cal.punches.cross];
   if (all.length > 0) {
-    out.straightMinElbow = clamp(Math.min(...all.map((s) => s.peakElbow)) - 10, 110, base.straightMinElbow);
-    out.straightMaxRiseMs = clamp(Math.max(...all.map((s) => s.riseMs)) * 1.5, base.straightMaxRiseMs, 500);
+    out.straightMaxElbowDrop = clamp(Math.max(...all.map((s) => s.elbowDrop)) + ELBOW_DROP_ROOM, base.straightMaxElbowDrop, 1);
+    out.straightMaxRiseMs = clamp(median(all.map((s) => s.riseMs)) * 2, base.straightMaxRiseMs, 500);
+    // Head shots land where the player's calibration punches (aimed at the camera) landed.
+    out.headTolerance = clamp(Math.max(...all.map((s) => s.wristDrop)) + HEAD_ROOM, base.headTolerance, 1);
   }
 
   out.guardRadius = clamp(cal.guard.maxWristNose * dc.guardRadiusMargin, base.guardRadius, 1.5);
@@ -55,7 +64,7 @@ export function deriveBoxingConfig(
   out.guardMaxDrop = clamp(cal.guard.maxWristDrop + GUARD_DROP_ROOM, base.guardMaxDrop, 0.8);
 
   if (cal.slip.left !== null && cal.slip.right !== null) {
-    out.slipThreshold = clamp(dc.slipFraction * Math.min(cal.slip.left, cal.slip.right), 0.12, 0.6);
+    out.slipThreshold = clamp(dc.slipFraction * Math.min(cal.slip.left, cal.slip.right), MIN_SLIP_THRESHOLD, 0.6);
   }
   if (cal.duck !== null) out.duckThreshold = clamp(dc.duckFraction * cal.duck, 0.08, 0.4);
   return out;

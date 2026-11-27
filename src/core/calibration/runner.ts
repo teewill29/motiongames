@@ -37,16 +37,29 @@ export interface ChoiceStep {
 
 export type CalibrationStep = FrameStep | ChoiceStep;
 
-/** Runs steps in order. The UI reads `current` and `status`. */
+/**
+ * Runs steps in order. The UI reads `current` and `status`.
+ * After each step finishes, frames are ignored for `restMs` so the tail of one
+ * movement (the last cross, say) can't count toward the next step.
+ */
 export class CalibrationRunner {
   private index = 0;
   status: StepStatus = { progress: 0, done: false };
+  /** Frame time when the rest after the last step ends; null when not resting. */
+  private restUntil: number | null = null;
+  private restPending = false;
 
   constructor(
     readonly steps: readonly CalibrationStep[],
     private readonly onStepDone?: (step: CalibrationStep) => void,
+    private readonly restMs = 0,
   ) {
     this.beginCurrent();
+  }
+
+  /** True while pausing between steps. */
+  get resting(): boolean {
+    return this.restPending || this.restUntil !== null;
   }
 
   get current(): CalibrationStep | null {
@@ -60,6 +73,14 @@ export class CalibrationRunner {
   }
 
   update(frame: BodyFrame): void {
+    if (this.restPending) {
+      this.restPending = false;
+      this.restUntil = frame.timestamp + this.restMs;
+    }
+    if (this.restUntil !== null) {
+      if (frame.timestamp < this.restUntil) return;
+      this.restUntil = null;
+    }
     const step = this.current;
     if (!step || step.kind !== "frames") return;
     this.status = step.update(frame);
@@ -94,6 +115,7 @@ export class CalibrationRunner {
     this.onStepDone?.(step);
     this.index++;
     this.beginCurrent();
+    if (this.restMs > 0 && step.kind === "frames") this.restPending = true;
   }
 
   private beginCurrent(): void {

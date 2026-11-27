@@ -20,8 +20,19 @@ export interface ArmState {
    * upper-arm + forearm length (which measures straightness without calibration).
    */
   extension: number;
-  /** Elbow angle in degrees from world landmarks (180 = straight). */
+  /** Elbow angle in degrees from world landmarks (180 = straight). Depth makes this unreliable for arms pointed at the camera. */
   elbowAngle: number;
+  /** On-screen shoulder-to-elbow length, scale units. */
+  upperArm2D: number;
+  /**
+   * upperArm2D / the calibrated in-plane upper arm length. About 1 when the
+   * upper arm is side-on to the camera (hanging, or out to the side), falling
+   * toward 0.2 when it points at the camera, as in a jab or cross. Purely 2D,
+   * so it doesn't suffer from the tracker's unreliable depth.
+   */
+  upperArmRatio: number;
+  /** Elbow position in view space. */
+  elbow: Vec2;
   /** 2D shoulder-to-wrist distance on screen, in body scale units (see BodyFrame.scale). */
   reach: number;
   /** Wrist position in view space. */
@@ -61,10 +72,11 @@ export interface BodyFrame {
   /** This frame's 2D shoulder width, in view units. Shrinks when the torso turns. */
   shoulderWidth: number;
   /**
-   * Base unit of distance, in view units: the widest shoulder width seen over the
-   * last `poseConfig.scaleWindowMs`. Turning the torso to punch shrinks the 2D
-   * shoulder width for a moment; the window max ignores that, while still
-   * following the player when they step closer or farther.
+   * Base unit of distance, in view units: a facing-the-camera shoulder width.
+   * Each frame takes the larger of the shoulder width and torso length × the
+   * player's shoulder/torso ratio (turning shrinks the first, bending the
+   * second), then the max over `poseConfig.scaleWindowMs`. It follows the
+   * player stepping closer or farther but not torso turns or a fighting stance.
    */
   scale: number;
   /** Shoulder line angle from horizontal, degrees. Positive = player's right shoulder lower. */

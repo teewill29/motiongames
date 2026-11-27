@@ -17,25 +17,27 @@ import { animate, punchSeries, type Keyframe } from "./syntheticPose";
 export function calibrationSession(stance: Stance): RawPoseFrame[] {
   const lead = stance === "orthodox" ? "left" : "right";
   const rear = lead === "left" ? "right" : "left";
+  // Each segment leaves room for the runner's rest between steps.
   const k: Keyframe[] = [
     { t: 0, left: "down", right: "down" },
-    { t: 3600 },
-    { t: 3900, left: "sideways", right: "sideways" },
-    { t: 5400 },
-    { t: 5700, left: "straight", right: "straight" },
-    { t: 7200 },
-    { t: 7500, left: "guard", right: "guard" },
-    { t: 10000 },
+    { t: 5200 },
+    { t: 5500, left: "sideways", right: "sideways" },
+    { t: 8500 },
+    { t: 8800, left: "straight", right: "straight" },
+    { t: 11800 },
+    { t: 12100, left: "guard", right: "guard" },
+    { t: 16500 },
   ];
   const append = (keys: Keyframe[]) => {
     const offset = k[k.length - 1]!.t;
     for (const key of keys.slice(1)) k.push({ ...key, t: key.t + offset });
   };
   append(punchSeries({ side: lead, path: ["straight"], count: 3, stepMs: [150], leadInMs: 300 }));
+  append([{ t: 0 }, { t: 1600 }]);
   append(punchSeries({ side: rear, path: ["straight"], count: 3, stepMs: [150], leadInMs: 300 }));
-  append([{ t: 0 }, { t: 300 }, { t: 600, upper: [0.2, 0, 0] }, { t: 900 }, { t: 1200, upper: [0, 0, 0] }, { t: 1500 }]);
-  append([{ t: 0 }, { t: 300, upper: [-0.2, 0, 0] }, { t: 600 }, { t: 900, upper: [0, 0, 0] }, { t: 1200 }]);
-  append([{ t: 0 }, { t: 300, upper: [0, 0.2, 0] }, { t: 600 }, { t: 900, upper: [0, 0, 0] }, { t: 1500 }]);
+  append([{ t: 0 }, { t: 1600 }, { t: 1900, upper: [0.2, 0, 0] }, { t: 2200 }, { t: 2500, upper: [0, 0, 0] }, { t: 2800 }]);
+  append([{ t: 0 }, { t: 1600 }, { t: 1900, upper: [-0.2, 0, 0] }, { t: 2200 }, { t: 2500, upper: [0, 0, 0] }, { t: 2800 }]);
+  append([{ t: 0 }, { t: 1600 }, { t: 1900, upper: [0, 0.2, 0] }, { t: 2200 }, { t: 2500, upper: [0, 0, 0] }, { t: 3000 }]);
   return animate(k);
 }
 
@@ -50,8 +52,8 @@ export interface Calibrated {
 export function runCalibration(frames: RawPoseFrame[], stance: Stance): Calibrated & { finishedAt: number } {
   const pipeline = new PosePipeline({ ...poseConfig });
   const cfg = { ...calibrationConfig };
-  const flow = boxingCalibrationFlow(cfg, stance, { onArmLength: (armLength) => pipeline.setProfile({ armLength }) });
-  const runner = new CalibrationRunner(flow.steps);
+  const flow = boxingCalibrationFlow(cfg, stance, { onArmLength: (arm) => pipeline.setProfile(arm) });
+  const runner = new CalibrationRunner(flow.steps, undefined, cfg.stepRestMs);
   runner.choose(stance);
   let finishedAt = -1;
   for (const raw of frames) {

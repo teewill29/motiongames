@@ -60,10 +60,10 @@ export class BoxingCalibrationScreen implements Screen {
     this.stage.debug.visible = false;
 
     const flow = boxingCalibrationFlow(calibrationConfig, loadBoxingSettings(this.app.storage).stance, {
-      onArmLength: (armLength) => this.stage.pipeline.setProfile({ armLength }),
+      onArmLength: (arm) => this.stage.pipeline.setProfile(arm),
     });
     this.complete = flow.complete;
-    this.runner = new CalibrationRunner(flow.steps);
+    this.runner = new CalibrationRunner(flow.steps, undefined, calibrationConfig.stepRestMs);
 
     this.stepLabel = h("div", { class: "cal-step" });
     this.title = h("h2", { class: "cal-title" });
@@ -157,8 +157,11 @@ export class BoxingCalibrationScreen implements Screen {
         li.className = n < i ? "done" : n === i ? "current" : "";
       });
     }
-    this.hint.textContent =
-      step.kind === "choice" ? "Click or press a number" : (status.hint ?? "") + (step.skippable ? "   ·   S to skip" : "");
+    this.hint.textContent = this.runner.resting
+      ? "✓ Got it. Get ready…"
+      : step.kind === "choice"
+        ? "Click or press a number"
+        : (status.hint ?? "") + (step.skippable ? "   ·   S to skip" : "");
     this.bar.style.width = `${Math.round(status.progress * 100)}%`;
   }
 
@@ -173,11 +176,11 @@ export class BoxingCalibrationScreen implements Screen {
     const rows: [string, string][] = [
       ["Stance", calibration.stance],
       ["Arm length (m)", `L ${f2(profile.armLength.left)} · R ${f2(profile.armLength.right)}`],
-      ["Guard extension", `lead ${f2(calibration.guard[lead].ext)} · rear ${f2(calibration.guard[rear].ext)}`],
-      ["Jab peaks", calibration.punches.jab.map((p) => f2(p.peakExt)).join(", ")],
-      ["Cross peaks", calibration.punches.cross.map((p) => f2(p.peakExt)).join(", ")],
-      ["Jab start → peak", `${f2(derived.jabStartExt)} → ${f2(derived.jabPeakExt)}`],
-      ["Cross start → peak", `${f2(derived.crossStartExt)} → ${f2(derived.crossPeakExt)}`],
+      ["Guard upper arm ratio", `lead ${f2(calibration.guard[lead].upperRatio)} · rear ${f2(calibration.guard[rear].upperRatio)}`],
+      ["Jab punches", calibration.punches.jab.map((p) => f2(p.minRatio)).join(", ")],
+      ["Cross punches", calibration.punches.cross.map((p) => f2(p.minRatio)).join(", ")],
+      ["Jab start → peak", `${f2(derived.jabStartRatio)} → ${f2(derived.jabPeakRatio)}`],
+      ["Cross start → peak", `${f2(derived.crossStartRatio)} → ${f2(derived.crossPeakRatio)}`],
       ["Avg rise (ms)", f2(avg([...calibration.punches.jab, ...calibration.punches.cross].map((p) => p.riseMs)))],
       ["Slip L / R", `${f2(calibration.slip.left)} / ${f2(calibration.slip.right)} → threshold ${f2(derived.slipThreshold)}`],
       ["Duck", `${f2(calibration.duck)} → threshold ${f2(derived.duckThreshold)}`],

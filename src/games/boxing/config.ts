@@ -9,14 +9,18 @@ import type { TunableSpecs } from "../../core/tuning/tunables";
  * in body scale units (robust shoulder widths) and units/s. Angles in degrees.
  */
 export const boxingConfig = {
-  // Straight punches. A punch fires when extension climbs from below Start to
-  // above Peak within straightMaxRiseMs, with the elbow nearly straight.
-  jabStartExt: 0.55,
-  jabPeakExt: 0.85,
-  crossStartExt: 0.55,
-  crossPeakExt: 0.85,
+  // Straight punches, read from the upper arm's on-screen length
+  // (BodyFrame upperArmRatio: ~1 side-on, ~0.2 pointing at the camera). The
+  // tracker's depth is too unreliable for punches thrown at the camera, so this
+  // is 2D. A punch fires when the ratio drops from above Start to below Peak
+  // within straightMaxRiseMs, with the elbow raised near shoulder height.
+  jabStartRatio: 0.75,
+  jabPeakRatio: 0.5,
+  crossStartRatio: 0.75,
+  crossPeakRatio: 0.5,
   straightMaxRiseMs: 250,
-  straightMinElbow: 140,
+  /** Elbow no lower than this below the shoulder line at the punch peak, scale units. */
+  straightMaxElbowDrop: 0.5,
   /** Max sideways wrist travel away from the centerline during a straight (rules out arms swung out to the side). */
   straightMaxOutward: 0.6,
 
@@ -24,6 +28,8 @@ export const boxingConfig = {
   hookMinElbow: 60,
   hookMaxElbow: 120,
   hookMinSpeed: 2.5,
+  /** A hook's upper arm stays side-on (ratio above this); a cross sweeping across the body points it at the camera. */
+  hookMinUpperRatio: 0.55,
 
   // Uppercuts: fast upward wrist motion that started below shoulder height, bent elbow.
   uppercutMinSpeed: 2.5,
@@ -31,12 +37,22 @@ export const boxingConfig = {
   uppercutMaxElbow: 120,
   /** How far back (ms) to look for the wrist having been below shoulder height. */
   uppercutLookbackMs: 300,
+  /** Extra wait (ms) past the decision window while an uppercut is still rising, to judge its height at the top. */
+  uppercutPeakWaitMs: 150,
+  /** Both hands rising together is raising the guard, not an uppercut: the other hand must rise slower than this. */
+  uppercutOtherHandMaxSpeed: 1.5,
 
   // Shared punch rules.
   /** Min time between punches from the same hand. */
   cooldownMs: 200,
-  /** After the first frame that matches any punch, wait this long and pick the strongest match. */
-  decisionWindowMs: 66,
+  /** Wrist speeds above this (scale units/s) are tracking glitches; such frames are ignored. */
+  maxWristSpeed: 20,
+  /**
+   * After the first frame that matches any punch, wait this long and pick the
+   * strongest match. Long enough to see a cross's upper arm turn toward the
+   * camera after its hook-like start.
+   */
+  decisionWindowMs: 100,
   /** After a punch, the hand re-arms once its speed drops below this (and it is back toward guard). */
   rearmSpeed: 3,
   /** A wrist up to this far below the shoulder line still counts as a head shot. */
@@ -72,21 +88,25 @@ export const boxingConfig = {
 export type BoxingConfig = typeof boxingConfig;
 
 export const boxingConfigSpecs: TunableSpecs<BoxingConfig> = {
-  jabStartExt: { min: 0, max: 1.2, step: 0.01, label: "Jab start ext" },
-  jabPeakExt: { min: 0, max: 1.2, step: 0.01, label: "Jab peak ext" },
-  crossStartExt: { min: 0, max: 1.2, step: 0.01, label: "Cross start ext" },
-  crossPeakExt: { min: 0, max: 1.2, step: 0.01, label: "Cross peak ext" },
+  jabStartRatio: { min: 0, max: 1.5, step: 0.01, label: "Jab start (upper arm ratio)" },
+  jabPeakRatio: { min: 0, max: 1.5, step: 0.01, label: "Jab peak (upper arm ratio)" },
+  crossStartRatio: { min: 0, max: 1.5, step: 0.01, label: "Cross start (upper arm ratio)" },
+  crossPeakRatio: { min: 0, max: 1.5, step: 0.01, label: "Cross peak (upper arm ratio)" },
   straightMaxRiseMs: { min: 50, max: 800, step: 10, label: "Straight max rise (ms)" },
-  straightMinElbow: { min: 90, max: 180, step: 1, label: "Straight min elbow (°)" },
+  straightMaxElbowDrop: { min: 0, max: 1.5, step: 0.01, label: "Straight max elbow drop" },
   straightMaxOutward: { min: 0.1, max: 2, step: 0.05, label: "Straight max outward" },
   hookMinElbow: { min: 0, max: 180, step: 1, label: "Hook min elbow (°)" },
   hookMaxElbow: { min: 0, max: 180, step: 1, label: "Hook max elbow (°)" },
   hookMinSpeed: { min: 0.5, max: 10, step: 0.1, label: "Hook min speed" },
+  hookMinUpperRatio: { min: 0, max: 1.5, step: 0.01, label: "Hook min upper arm ratio" },
   uppercutMinSpeed: { min: 0.5, max: 10, step: 0.1, label: "Uppercut min speed" },
   uppercutMinElbow: { min: 0, max: 180, step: 1, label: "Uppercut min elbow (°)" },
   uppercutMaxElbow: { min: 0, max: 180, step: 1, label: "Uppercut max elbow (°)" },
   uppercutLookbackMs: { min: 50, max: 800, step: 10, label: "Uppercut lookback (ms)" },
+  uppercutPeakWaitMs: { min: 0, max: 400, step: 10, label: "Uppercut peak wait (ms)" },
+  uppercutOtherHandMaxSpeed: { min: 0.2, max: 10, step: 0.1, label: "Uppercut other hand max" },
   cooldownMs: { min: 0, max: 1000, step: 10, label: "Hand cooldown (ms)" },
+  maxWristSpeed: { min: 5, max: 60, step: 1, label: "Glitch speed" },
   decisionWindowMs: { min: 0, max: 300, step: 1, label: "Decision window (ms)" },
   rearmSpeed: { min: 0.2, max: 10, step: 0.1, label: "Re-arm speed" },
   headTolerance: { min: 0, max: 1, step: 0.01, label: "Head tolerance" },

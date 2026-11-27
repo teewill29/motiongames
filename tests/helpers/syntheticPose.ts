@@ -139,12 +139,13 @@ export const LEFT = {
   guard: arm([-0.2, 0.75, -0.6], [-0.3, -1.0, -0.35]),
   straight: arm([-0.15, 0.05, -1], [-0.15, 0.05, -1]),
   /** Straight punch to the body: aimed lower. */
-  straightBody: arm([-0.15, 0.45, -1], [-0.15, 0.45, -1]),
+  straightBody: arm([-0.15, 0.3, -1], [-0.15, 0.3, -1]),
   hookWind: arm([0.8, 0.1, -0.3], [0.1, -0.3, -1]),
-  /** Fist finishes in front of the face, at the centerline. */
-  hookFinish: arm([0.3, 0.1, -0.9], [-1, -0.3, -0.2]),
+  /** Elbow out at shoulder height (upper arm stays side-on), forearm sweeping across in front of the face. */
+  hookFinish: arm([0.7, 0.05, -0.7], [-1, -0.1, -0.45]),
   uppercutDip: arm([0, 1, -0.2], [0, 0.2, -1]),
-  uppercutFinish: arm([0, 0.3, -1], [0, -1, -0.2]),
+  /** Elbow stays low in front of the body; forearm vertical. */
+  uppercutFinish: arm([0, 0.8, -0.6], [0, -1, -0.6]),
   sideways: arm([1, 0, 0], [1, 0, 0]),
   down: arm([0.05, 1, 0], [0.05, 1, 0]),
 };

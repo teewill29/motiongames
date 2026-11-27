@@ -18,6 +18,14 @@ export const poseConfig = {
   resetGapMs: 500,
   /** Window (ms) for BodyFrame.scale, the max shoulder width that ignores torso turns. */
   scaleWindowMs: 1500,
+  /**
+   * Shoulder width / torso length when facing the camera. A fighting stance
+   * turns the shoulders for long stretches, so scale also looks at torso
+   * length × this. Calibration measures the player's own value.
+   */
+  shoulderTorsoRatio: 0.7,
+  /** Upper arm on-screen length in the image plane, in scale units. Calibration measures the player's own value. */
+  upperArmRef: 0.7,
 };
 
 export type PoseConfig = typeof poseConfig;
@@ -29,4 +37,6 @@ export const poseConfigSpecs: TunableSpecs<PoseConfig> = {
   minVisibility: { min: 0, max: 1, step: 0.05, label: "Min visibility" },
   resetGapMs: { min: 50, max: 2000, step: 50, label: "Reset gap (ms)" },
   scaleWindowMs: { min: 0, max: 5000, step: 100, label: "Body scale window (ms)" },
+  shoulderTorsoRatio: { min: 0.3, max: 1.5, step: 0.01, label: "Shoulder/torso ratio (default)" },
+  upperArmRef: { min: 0.3, max: 1.5, step: 0.01, label: "Upper arm length (default)" },
 };

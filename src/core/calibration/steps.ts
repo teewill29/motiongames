@@ -19,6 +19,9 @@ const worldArmDistance = (f: BodyFrame, side: Side) =>
 
 const progress = (held: number, need: number) => Math.min(1, held / need);
 
+/** upperArmRatio assumed for a fully extended straight punch when the arms-forward step is skipped. */
+const FALLBACK_FORWARD_RATIO = 0.35;
+
 /** 1. Player centered, at a usable distance, visible from the waist up. */
 export function positionStep(cfg: CalibrationConfig): FrameStep {
   const hold = new HoldTimer();
@@ -59,7 +62,7 @@ export function neutralStep(cfg: CalibrationConfig, draft: ProfileDraft): FrameS
     kind: "frames",
     id: "neutral",
     title: "Stand still",
-    instruction: "Stand tall and relaxed, hands down, and hold still.",
+    instruction: "Stand tall and relaxed, arms hanging at your sides, and hold still.",
     skippable: false,
     begin() {
       hold.reset();
@@ -85,6 +88,9 @@ export function neutralStep(cfg: CalibrationConfig, draft: ProfileDraft): FrameS
       draft.nose = { x: m((f) => f.nose.x), y: m((f) => f.nose.y) };
       draft.hipMid = { x: m((f) => f.hipMid.x), y: m((f) => f.hipMid.y) };
       draft.torsoLength = m((f) => f.torsoLength);
+      draft.shoulderTorsoRatio = m((f) => f.shoulderWidth) / m((f) => f.torsoLength);
+      // Arms hanging at the sides are side-on to the camera: the reference upper arm length.
+      draft.upperArm2D = { left: m((f) => f.arms.left.upperArm2D), right: m((f) => f.arms.right.upperArm2D) };
     },
   };
 }
@@ -112,13 +118,14 @@ export function armsSideStep(cfg: CalibrationConfig, draft: ProfileDraft, onArmL
           return (
             a.visible &&
             a.elbowAngle >= cfg.straightArmElbow &&
-            outward > 1.5 * f.scale &&
+            outward > cfg.armsOutMinReach * f.scale &&
             Math.abs(a.wrist.y - f.shoulderMid.y) < 0.8 * f.scale
           );
         });
       const held = hold.update(ok, f.timestamp);
       if (!ok) samples = [];
-      else samples.push({ left: worldArmDistance(f, "left"), right: worldArmDistance(f, "right") });
+      else
+        samples.push({ left: worldArmDistance(f, "left"), right: worldArmDistance(f, "right") });
       return {
         progress: progress(held, cfg.armHoldMs),
         done: held >= cfg.armHoldMs,
@@ -136,8 +143,10 @@ export function armsSideStep(cfg: CalibrationConfig, draft: ProfileDraft, onArmL
 export function armsForwardStep(cfg: CalibrationConfig, draft: ProfileDraft): FrameStep {
   const hold = new HoldTimer();
   let samples: { left: number; right: number }[] = [];
+  let ratios: { left: number; right: number }[] = [];
   const fallback = () => {
     draft.forwardExtension = { left: 0.9, right: 0.9 };
+    draft.forwardRatio = { left: FALLBACK_FORWARD_RATIO, right: FALLBACK_FORWARD_RATIO };
   };
   return {
     kind: "frames",
@@ -148,18 +157,24 @@ export function armsForwardStep(cfg: CalibrationConfig, draft: ProfileDraft): Fr
     begin() {
       hold.reset();
       samples = [];
+      ratios = [];
     },
     update(f) {
       const ok =
         f.tracked &&
         (["left", "right"] as const).every((side) => {
           const a = f.arms[side];
-          // Pointing at the camera: straight-ish elbow, wrist near shoulder height, little sideways reach.
-          return a.visible && a.elbowAngle >= cfg.straightArmElbow - 15 && a.reach < 1.2 && Math.abs(a.wrist.y - f.shoulderMid.y) < 0.8 * f.scale;
+          // Pointing at the camera: upper arm foreshortened on screen, wrist near shoulder height, little sideways reach.
+          return a.visible && a.upperArmRatio < cfg.forwardMaxRatio && a.reach < 1.2 && Math.abs(a.wrist.y - f.shoulderMid.y) < 0.8 * f.scale;
         });
       const held = hold.update(ok, f.timestamp);
-      if (!ok) samples = [];
-      else samples.push({ left: f.arms.left.extension, right: f.arms.right.extension });
+      if (!ok) {
+        samples = [];
+        ratios = [];
+      } else {
+        samples.push({ left: f.arms.left.extension, right: f.arms.right.extension });
+        ratios.push({ left: f.arms.left.upperArmRatio, right: f.arms.right.upperArmRatio });
+      }
       return {
         progress: progress(held, cfg.armHoldMs),
         done: held >= cfg.armHoldMs,
@@ -169,6 +184,7 @@ export function armsForwardStep(cfg: CalibrationConfig, draft: ProfileDraft): Fr
     finish() {
       if (samples.length === 0) return fallback();
       draft.forwardExtension = { left: median(samples.map((s) => s.left)), right: median(samples.map((s) => s.right)) };
+      draft.forwardRatio = { left: median(ratios.map((s) => s.left)), right: median(ratios.map((s) => s.right)) };
     },
     skip: fallback,
   };
@@ -176,14 +192,17 @@ export function armsForwardStep(cfg: CalibrationConfig, draft: ProfileDraft): Fr
 
 /** Turns a completed draft into a profile. Throws if a required step did not run. */
 export function completeProfile(draft: ProfileDraft): CalibrationProfile {
-  const { shoulderWidth, shoulderMid, nose, hipMid, torsoLength, armLength, forwardExtension } = draft;
-  if (!shoulderWidth || !shoulderMid || !nose || !hipMid || !torsoLength || !armLength) {
+  const { shoulderWidth, shoulderMid, nose, hipMid, torsoLength, armLength, forwardExtension, upperArm2D, shoulderTorsoRatio } = draft;
+  if (!shoulderWidth || !shoulderMid || !nose || !hipMid || !torsoLength || !armLength || !upperArm2D || !shoulderTorsoRatio) {
     throw new Error("Calibration is incomplete");
   }
   return {
-    version: 1,
+    version: 2,
     createdAt: new Date().toISOString(),
     shoulderWidth,
+    shoulderTorsoRatio,
+    upperArm2D,
+    forwardRatio: draft.forwardRatio ?? { left: FALLBACK_FORWARD_RATIO, right: FALLBACK_FORWARD_RATIO },
     shoulderMid,
     nose,
     hipMid,

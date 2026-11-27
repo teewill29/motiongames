@@ -77,6 +77,7 @@ export function guardStep(cfg: CalibrationConfig, draft: BoxingDraft): FrameStep
       const arm = (side: Side) => ({
         ext: median(samples.map((f) => f.arms[side].extension)),
         elbow: median(samples.map((f) => f.arms[side].elbowAngle)),
+        upperRatio: median(samples.map((f) => f.arms[side].upperArmRatio)),
       });
       const wristNose = samples.flatMap((f) =>
         (["left", "right"] as const).map((s) => Math.hypot(f.arms[s].wrist.x - f.nose.x, f.arms[s].wrist.y - f.nose.y) / f.scale),
@@ -95,17 +96,20 @@ export function guardStep(cfg: CalibrationConfig, draft: BoxingDraft): FrameStep
   };
 }
 
-/** Throw N straight punches with the lead (jab) or rear (cross) hand. */
+/**
+ * Throw N straight punches with the lead (jab) or rear (cross) hand. A punch is
+ * the upper arm turning toward the camera: its on-screen ratio dropping
+ * `punchMargin` below the guard value, then recovering.
+ */
 export function punchStep(cfg: CalibrationConfig, draft: BoxingDraft, kind: "jab" | "cross"): FrameStep {
   let samples: PunchSample[] = [];
   let inPunch = false;
   let restT = 0;
-  let peak: { ext: number; elbow: number; t: number; speed: number } | null = null;
+  let peak: { ratio: number; elbowDrop: number; wristDrop: number; ext: number; t: number; speed: number } | null = null;
   const side = (): Side => {
     const lead = leadSide(draft.stance);
     return kind === "jab" ? lead : lead === "left" ? "right" : "left";
   };
-  const hand = () => (side() === "left" ? "left" : "right");
   return {
     kind: "frames",
     id: kind,
@@ -121,24 +125,31 @@ export function punchStep(cfg: CalibrationConfig, draft: BoxingDraft, kind: "jab
       const g = draft.guard?.[side()];
       const a = f.arms[side()];
       const need = cfg.punchesPerType;
-      const status = (hint?: string) => ({
+      const status = () => ({
         progress: samples.length / need,
         done: samples.length >= need,
-        hint: hint ?? `${samples.length} of ${need}: ${hand()} hand`,
+        hint: `${samples.length} of ${need}: ${side()} hand`,
       });
       if (!g || !f.tracked || !a.visible) return status();
       const speed = Math.hypot(a.wristVelocityBody.x, a.wristVelocityBody.y);
+      const elbowDrop = (a.elbow.y - f.shoulderMid.y) / f.scale;
+      const wristDrop = (a.wrist.y - f.shoulderMid.y) / f.scale;
+      const r = a.upperArmRatio;
       if (!inPunch) {
-        if (a.extension <= g.ext + cfg.punchMargin * 0.3) restT = f.timestamp;
-        if (a.extension > g.ext + cfg.punchMargin && a.elbowAngle > g.elbow + cfg.punchElbowMargin) {
+        if (r >= g.upperRatio - cfg.punchMargin * 0.3) restT = f.timestamp;
+        if (r < g.upperRatio - cfg.punchMargin) {
           inPunch = true;
-          peak = { ext: a.extension, elbow: a.elbowAngle, t: f.timestamp, speed };
+          peak = { ratio: r, elbowDrop, wristDrop, ext: a.extension, t: f.timestamp, speed };
         }
       } else if (peak) {
-        if (a.extension > peak.ext) peak = { ext: a.extension, elbow: a.elbowAngle, t: f.timestamp, speed: Math.max(peak.speed, speed) };
+        if (r < peak.ratio) peak = { ratio: r, elbowDrop, wristDrop, ext: Math.max(peak.ext, a.extension), t: f.timestamp, speed: Math.max(peak.speed, speed) };
         else peak.speed = Math.max(peak.speed, speed);
-        if (a.extension < g.ext + cfg.punchMargin * 0.5) {
-          samples.push({ peakExt: peak.ext, peakElbow: peak.elbow, riseMs: peak.t - restT, peakSpeed: peak.speed });
+        if (r > g.upperRatio - cfg.punchMargin * 0.5) {
+          const riseMs = peak.t - restT;
+          // A slow drift of the arm is tracking noise or a reach, not a punch.
+          if (riseMs <= cfg.punchMaxRiseMs) {
+            samples.push({ minRatio: peak.ratio, elbowDrop: peak.elbowDrop, wristDrop: peak.wristDrop, peakExt: peak.ext, riseMs, peakSpeed: peak.speed });
+          }
           inPunch = false;
           peak = null;
         }
@@ -224,7 +235,7 @@ export function duckStep(cfg: CalibrationConfig, draft: BoxingDraft, profile: Pr
 export function completeBoxingCalibration(d: BoxingDraft): BoxingCalibration {
   if (!d.guard) throw new Error("Guard step did not run");
   return {
-    version: 1,
+    version: 2,
     createdAt: new Date().toISOString(),
     stance: d.stance,
     guard: d.guard,

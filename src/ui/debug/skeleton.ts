@@ -58,7 +58,7 @@ export function drawSkeleton(
     ctx.fill();
   });
 
-  // Wrist labels with live extension, so arm metrics can be eyeballed against the image.
+  // Wrist labels with the upper arm ratio (low = pointed at the camera), the straight-punch signal.
   ctx.font = `${Math.round(16 * Math.max(0.7, scale))}px ui-monospace, monospace`;
   ctx.fillStyle = "#ffffff";
   ctx.strokeStyle = "rgba(0,0,0,0.7)";
@@ -66,7 +66,7 @@ export function drawSkeleton(
   for (const side of ["left", "right"] as const) {
     const arm = frame.arms[side];
     if (!arm.visible) continue;
-    const label = `${side === "left" ? "L" : "R"} ${arm.extension.toFixed(2)}`;
+    const label = `${side === "left" ? "L" : "R"} ${arm.upperArmRatio.toFixed(2)}`;
     const x = px(arm.wrist.x) + 12, y = py(arm.wrist.y) - 12;
     ctx.strokeText(label, x, y);
     ctx.fillText(label, x, y);

@@ -1,3 +1,4 @@
+import type { ArmProfile } from "../../../core/body/buildBodyFrame";
 import type { CalibrationConfig } from "../../../core/calibration/config";
 import { saveProfile, type CalibrationProfile } from "../../../core/calibration/profile";
 import type { CalibrationStep } from "../../../core/calibration/runner";
@@ -41,7 +42,7 @@ export interface BoxingCalibrationFlow {
 export function boxingCalibrationFlow(
   cfg: CalibrationConfig,
   stance: Stance,
-  hooks: { onArmLength(armLength: CalibrationProfile["armLength"]): void; onStance?(s: Stance): void },
+  hooks: { onArmLength(arm: ArmProfile): void; onStance?(s: Stance): void },
 ): BoxingCalibrationFlow {
   const profile: ProfileDraft = {};
   const boxing = newBoxingDraft(stance);
@@ -49,7 +50,9 @@ export function boxingCalibrationFlow(
     stanceStep(boxing, (s) => hooks.onStance?.(s)),
     positionStep(cfg),
     neutralStep(cfg, profile),
-    armsSideStep(cfg, profile, () => hooks.onArmLength(profile.armLength!)),
+    armsSideStep(cfg, profile, () =>
+      hooks.onArmLength({ armLength: profile.armLength, upperArm2D: profile.upperArm2D, shoulderTorsoRatio: profile.shoulderTorsoRatio }),
+    ),
     armsForwardStep(cfg, profile),
     guardStep(cfg, boxing),
     punchStep(cfg, boxing, "jab"),

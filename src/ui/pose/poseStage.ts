@@ -305,7 +305,7 @@ export class PoseStage {
           rows.push([`${tag} arm`, "not visible"]);
           continue;
         }
-        rows.push([`${tag} ext / elbow`, `${a.extension.toFixed(2)} / ${a.elbowAngle.toFixed(0)}°`]);
+        rows.push([`${tag} upper arm / elbow`, `${a.upperArmRatio.toFixed(2)} / ${a.elbowAngle.toFixed(0)}°`]);
         rows.push([`${tag} hand v (body)`, `${a.wristVelocityBody.x.toFixed(1)}, ${a.wristVelocityBody.y.toFixed(1)}`]);
       }
     }

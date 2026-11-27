@@ -6,8 +6,8 @@ import type { Landmark, RawPoseFrame } from "../pose/types";
 import type { ArmState, BodyFrame, BodyPoint, Side } from "./bodyFrame";
 import { angle3, dist2, dist3, mid2, type Vec2 } from "./geometry";
 
-/** The part of the calibration profile BodyFrame needs. Mid-calibration only this exists. */
-export type ArmProfile = Pick<CalibrationProfile, "armLength">;
+/** The parts of the calibration profile BodyFrame needs. Mid-calibration only some exist. */
+export type ArmProfile = Partial<Pick<CalibrationProfile, "armLength" | "upperArm2D" | "shoulderTorsoRatio">>;
 
 const ARM_LANDMARKS: Record<Side, { shoulder: number; elbow: number; wrist: number }> = {
   left: { shoulder: LM.leftShoulder, elbow: LM.leftElbow, wrist: LM.leftWrist },
@@ -54,6 +54,9 @@ function emptyArm(): ArmState {
     extension: 0,
     elbowAngle: 180,
     reach: 0,
+    upperArm2D: 0,
+    upperArmRatio: 1,
+    elbow: ZERO,
     wrist: ZERO,
     wristVelocity: ZERO,
     wristVelocityBody: ZERO,
@@ -140,13 +143,15 @@ export class BodyFrameBuilder {
 
     const at = (i: number) => landmarks[i]!;
     const shoulderWidth = dist2(at(LM.leftShoulder), at(LM.rightShoulder));
-    const scale = this.updateScale(t, shoulderWidth);
-    // View x: player's left shoulder is on the left. Positive tilt = right shoulder lower (y down).
-    const ls = at(LM.leftShoulder), rs = at(LM.rightShoulder);
-    const shoulderTilt = (Math.atan2(rs.y - ls.y, rs.x - ls.x) * 180) / Math.PI;
     const shoulderMid = mid2(at(LM.leftShoulder), at(LM.rightShoulder));
     const hipMid = mid2(at(LM.leftHip), at(LM.rightHip));
     const torsoLength = dist2(shoulderMid, hipMid);
+    const hipsVisible = landmarks[LM.leftHip]!.visibility >= this.config.minVisibility && landmarks[LM.rightHip]!.visibility >= this.config.minVisibility;
+    const torsoRatio = this.profile?.shoulderTorsoRatio ?? this.config.shoulderTorsoRatio;
+    const scale = this.updateScale(t, Math.max(shoulderWidth, hipsVisible ? torsoLength * torsoRatio : 0));
+    // View x: player's left shoulder is on the left. Positive tilt = right shoulder lower (y down).
+    const ls = at(LM.leftShoulder), rs = at(LM.rightShoulder);
+    const shoulderTilt = (Math.atan2(rs.y - ls.y, rs.x - ls.x) * 180) / Math.PI;
     const nose = { x: at(LM.nose).x, y: at(LM.nose).y };
 
     const prev = this.prev && this.prev.tracked ? this.prev : null;
@@ -154,9 +159,11 @@ export class BodyFrameBuilder {
 
     const arm = (side: Side): ArmState => {
       const ids = ARM_LANDMARKS[side];
-      const s = landmarks[ids.shoulder]!, w = landmarks[ids.wrist]!;
+      const s = landmarks[ids.shoulder]!, e = landmarks[ids.elbow]!, w = landmarks[ids.wrist]!;
+      const upperArm2D = scale > 0 ? dist2(s, e) / scale : 0;
+      const upperRef = this.profile?.upperArm2D?.[side] ?? this.config.upperArmRef;
       const ws = world[ids.shoulder]!, we = world[ids.elbow]!, ww = world[ids.wrist]!;
-      const armLength = this.profile?.armLength[side] ?? dist3(ws, we) + dist3(we, ww);
+      const armLength = this.profile?.armLength?.[side] ?? dist3(ws, we) + dist3(we, ww);
       const wrist = { x: w.x, y: w.y };
       let wristVelocity = ZERO;
       let wristVelocityBody = ZERO;
@@ -173,6 +180,9 @@ export class BodyFrameBuilder {
         visible: [ids.shoulder, ids.elbow, ids.wrist].every((i) => landmarks[i]!.visibility >= minVis),
         extension: armLength > 0 ? dist3(ws, ww) / armLength : 0,
         elbowAngle: angle3(ws, we, ww),
+        upperArm2D,
+        upperArmRatio: upperRef > 0 ? upperArm2D / upperRef : 1,
+        elbow: { x: e.x, y: e.y },
         reach: scale > 0 ? dist2(s, w) / scale : 0,
         wrist,
         wristVelocity,

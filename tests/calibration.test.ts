@@ -23,6 +23,9 @@ describe("shared calibration", () => {
     expect(profile.armLength.left).toBeCloseTo(ARM_LENGTH, 2);
     expect(profile.armLength.right).toBeCloseTo(ARM_LENGTH, 2);
     expect(profile.forwardExtension.left).toBeGreaterThan(0.95);
+    expect(profile.forwardRatio.left).toBeLessThan(0.35);
+    // Arms hanging at the sides: upper arm 0.3 m over 0.36 m shoulders.
+    expect(profile.upperArm2D.left).toBeCloseTo(0.3 / 0.36, 1);
   });
 
   it("reports distance relative to calibration", () => {
@@ -53,7 +56,8 @@ describe("shared calibration", () => {
     const runner = new CalibrationRunner([armsForwardStep({ ...calibrationConfig }, draft)]);
     expect(runner.skip()).toBe(true);
     expect(runner.finished).toBe(true);
-    expect(draft).toEqual({ forwardExtension: { left: 0.9, right: 0.9 } });
+    expect(draft).toMatchObject({ forwardExtension: { left: 0.9, right: 0.9 } });
+    expect(draft).toHaveProperty("forwardRatio");
   });
 
   it("does not let a required step be skipped", () => {
@@ -66,12 +70,12 @@ describe("boxing calibration", () => {
   const { boxing, config } = syntheticCalibration();
 
   it("records guard, punches, slips and duck", () => {
-    expect(boxing.guard.left.ext).toBeCloseTo(0.53, 1);
+    expect(boxing.guard.left.upperRatio).toBeGreaterThan(0.6);
     expect(boxing.guard.left.elbow).toBeLessThan(80);
     expect(boxing.punches.jab).toHaveLength(3);
     expect(boxing.punches.cross).toHaveLength(3);
     for (const p of [...boxing.punches.jab, ...boxing.punches.cross]) {
-      expect(p.peakExt).toBeGreaterThan(0.95);
+      expect(p.minRatio).toBeLessThan(0.35); // upper arm pointed at the camera
       expect(p.riseMs).toBeGreaterThan(0);
     }
     expect(boxing.slip.left).toBeCloseTo(0.2 / 0.36, 1);
@@ -79,43 +83,51 @@ describe("boxing calibration", () => {
     expect(boxing.duck).toBeCloseTo(0.4, 1);
   });
 
-  it("derives thresholds between guard and punch peak", () => {
-    expect(config.jabStartExt).toBeGreaterThan(boxing.guard.left.ext);
-    expect(config.jabPeakExt).toBeGreaterThan(config.jabStartExt);
-    expect(config.jabPeakExt).toBeLessThan(0.99);
+  it("derives thresholds between guard and punch", () => {
+    const punch = boxing.punches.jab[0]!.minRatio;
+    expect(config.jabStartRatio).toBeLessThan(boxing.guard.left.upperRatio);
+    expect(config.jabPeakRatio).toBeLessThan(config.jabStartRatio);
+    expect(config.jabPeakRatio).toBeGreaterThan(punch);
     expect(config.slipThreshold).toBeLessThan(boxing.slip.left!);
     expect(config.duckThreshold).toBeLessThan(boxing.duck!);
   });
 
   const base = (): BoxingCalibration => ({
-    version: 1,
+    version: 2,
     createdAt: "",
     stance: "orthodox",
     guard: {
-      left: { ext: 0.75, elbow: 95 },
-      right: { ext: 0.6, elbow: 80 },
+      left: { ext: 0.75, elbow: 95, upperRatio: 0.85 },
+      right: { ext: 0.6, elbow: 80, upperRatio: 0.8 },
       maxWristNose: 0.4,
       maxWristDrop: 0.3,
       lean: 0,
       shoulderY: 0.3,
     },
     punches: {
-      jab: [{ peakExt: 0.97, peakElbow: 150, riseMs: 180, peakSpeed: 8 }],
-      cross: [{ peakExt: 0.62, peakElbow: 100, riseMs: 180, peakSpeed: 8 }],
+      jab: [{ minRatio: 0.45, elbowDrop: 0.3, wristDrop: 0.2, peakExt: 0.9, riseMs: 120, peakSpeed: 8 }],
+      // Barely moved the upper arm: not usable.
+      cross: [{ minRatio: 0.72, elbowDrop: 0.3, wristDrop: 0.2, peakExt: 0.8, riseMs: 120, peakSpeed: 8 }],
     },
     slip: { left: 0.5, right: null },
     duck: null,
   });
 
-  it("uses per-hand guard positions (a high guard extension like the owner's recording)", () => {
+  it("places straight thresholds between the hand's guard and its punches", () => {
     const d = deriveBoxingConfig(base(), BOXING_SPEC_DEFAULTS, calibrationConfig);
-    expect(d.jabStartExt).toBeCloseTo(0.75 + 0.3 * 0.22, 5);
-    expect(d.jabPeakExt).toBeCloseTo(0.75 + 0.7 * 0.22, 5);
+    expect(d.jabStartRatio).toBeCloseTo(0.85 - calibrationConfig.startFraction * 0.4, 5);
+    expect(d.jabPeakRatio).toBeCloseTo(0.85 - calibrationConfig.peakFraction * 0.4, 5);
+  });
+
+  it("moves the head-shot line down to where calibration punches landed", () => {
+    const c = base();
+    c.punches.jab[0]!.wristDrop = 0.4;
+    expect(deriveBoxingConfig(c, BOXING_SPEC_DEFAULTS, calibrationConfig).headTolerance).toBeCloseTo(0.55, 5);
   });
 
   it("keeps defaults where calibration is unusable or skipped", () => {
     const d = deriveBoxingConfig(base(), BOXING_SPEC_DEFAULTS, calibrationConfig);
-    expect(d.crossStartExt).toBeUndefined(); // peak barely above guard
+    expect(d.crossStartRatio).toBeUndefined(); // upper arm barely turned
     expect(d.slipThreshold).toBeUndefined(); // one slip skipped
     expect(d.duckThreshold).toBeUndefined();
   });

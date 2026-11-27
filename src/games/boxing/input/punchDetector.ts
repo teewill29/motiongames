@@ -6,7 +6,10 @@ import type { HandRole, PunchEvent, PunchTarget, PunchType } from "../types";
 interface Sample {
   t: number;
   visible: boolean;
-  ext: number;
+  /** Upper arm on-screen ratio: ~1 side-on, low when pointing at the camera. */
+  ratio: number;
+  /** Elbow below the shoulder line, scale units. */
+  elbowDrop: number;
   elbow: number;
   wrist: Vec2;
   v: Vec2;
@@ -39,7 +42,7 @@ export class HandPunchDetector {
   private history: Sample[] = [];
   private armed = true;
   private lastFireT = -Infinity;
-  private pending: { openedT: number; best: Map<PunchType, Candidate> } | null = null;
+  private pending: { openedT: number; best: Map<PunchType, Candidate>; minRatio: number } | null = null;
 
   constructor(
     readonly side: Side,
@@ -68,50 +71,67 @@ export class HandPunchDetector {
     while (this.history.length > 1 && s.t - this.history[0]!.t > HISTORY_MS) this.history.shift();
 
     const cfg = this.cfg;
-    const { startExt } = this.thresholds();
+    const { start } = this.thresholds();
 
     if (!this.armed && !this.pending) {
-      if (s.visible && s.ext < startExt && s.speed < cfg.rearmSpeed && s.t - this.lastFireT >= cfg.cooldownMs) {
+      // Back toward guard: upper arm no longer pointed at the camera, hand slowed down.
+      if (s.visible && s.ratio > start && s.speed < cfg.rearmSpeed && s.t - this.lastFireT >= cfg.cooldownMs) {
         this.armed = true;
       }
     }
 
     if (this.armed && s.visible && s.t - this.lastFireT >= cfg.cooldownMs) {
-      for (const c of this.candidates(s)) {
-        if (!this.pending) this.pending = { openedT: s.t, best: new Map() };
+      for (const c of this.candidates(s, frame)) {
+        if (!this.pending) this.pending = { openedT: s.t, best: new Map(), minRatio: s.ratio };
         const prev = this.pending.best.get(c.type);
         if (!prev || c.score > prev.score) this.pending.best.set(c.type, c);
       }
     }
+    if (this.pending && s.visible) this.pending.minRatio = Math.min(this.pending.minRatio, s.ratio);
 
     if (this.pending && s.t - this.pending.openedT >= cfg.decisionWindowMs) {
-      const winner = [...this.pending.best.values()].sort((a, b) => b.score - a.score)[0];
+      const { best, minRatio } = this.pending;
+      // An uppercut's target is where the fist tops out: wait while it's still rising.
+      const onlyUppercut = best.size === 1 && best.has("uppercut");
+      const rising = s.visible && -s.v.y > cfg.uppercutMinSpeed / 2;
+      if (onlyUppercut && rising && s.t - this.pending.openedT < cfg.decisionWindowMs + cfg.uppercutPeakWaitMs) return null;
       this.pending = null;
+      // A straight is unmistakable (upper arm pointed at the camera), so it beats
+      // anything else in the window. A cross starts like a hook, sweeping toward
+      // the centerline, then turns the upper arm toward the camera: if the arm did
+      // that at any point in the window, it wasn't a hook.
+      if (minRatio < cfg.hookMinUpperRatio) best.delete("hook");
+      const straight = best.get("jab") ?? best.get("cross");
+      const winner = straight ?? [...best.values()].sort((a, b) => b.score - a.score)[0];
       if (winner) return this.fire(winner);
     }
     return null;
   }
 
-  private thresholds(): { startExt: number; peakExt: number } {
+  /** Straight-punch thresholds for this hand's role. */
+  private thresholds(): { start: number; peak: number } {
     const lead = this.role() === "lead";
     return lead
-      ? { startExt: this.cfg.jabStartExt, peakExt: this.cfg.jabPeakExt }
-      : { startExt: this.cfg.crossStartExt, peakExt: this.cfg.crossPeakExt };
+      ? { start: this.cfg.jabStartRatio, peak: this.cfg.jabPeakRatio }
+      : { start: this.cfg.crossStartRatio, peak: this.cfg.crossPeakRatio };
   }
 
   private sample(f: BodyFrame): Sample {
     const a = f.arms[this.side];
     // Hips can drop out of view; fall back to a typical torso proportion.
     const torso = f.visible.leftHip && f.visible.rightHip && f.torsoLength > 0 ? f.torsoLength : 1.5 * f.scale;
+    const speed = Math.hypot(a.wristVelocityBody.x, a.wristVelocityBody.y);
     return {
       t: f.timestamp,
-      visible: a.visible,
-      ext: a.extension,
+      // A wrist moving impossibly fast is the tracker jumping, not a punch.
+      visible: a.visible && speed <= this.cfg.maxWristSpeed,
+      ratio: a.upperArmRatio,
+      elbowDrop: (a.elbow.y - f.shoulderMid.y) / f.scale,
       elbow: a.elbowAngle,
       wrist: a.wrist,
       // Body-relative, so slips and ducks with the hands up don't read as hooks or uppercuts.
       v: a.wristVelocityBody,
-      speed: Math.hypot(a.wristVelocityBody.x, a.wristVelocityBody.y),
+      speed,
       shoulderY: f.shoulderMid.y,
       scale: f.scale,
       torso,
@@ -127,19 +147,20 @@ export class HandPunchDetector {
     return this.history[0]?.t ?? now.t;
   }
 
-  private candidates(s: Sample): Candidate[] {
+  private candidates(s: Sample, frame: BodyFrame): Candidate[] {
     const cfg = this.cfg;
     const out: Candidate[] = [];
     const towardCenter = this.side === "left" ? 1 : -1; // view space: left hand's centerline is +x
 
-    // Straight (jab with the lead hand, cross with the rear).
-    const { startExt, peakExt } = this.thresholds();
-    if (s.ext >= peakExt && s.elbow >= cfg.straightMinElbow) {
+    // Straight (jab with the lead hand, cross with the rear): the upper arm swings
+    // to point at the camera, with the elbow raised near shoulder height.
+    const { start: startRatio, peak: peakRatio } = this.thresholds();
+    if (s.ratio <= peakRatio && s.elbowDrop <= cfg.straightMaxElbowDrop) {
       let start: Sample | null = null;
       for (let i = this.history.length - 2; i >= 0; i--) {
         const h = this.history[i]!;
         if (s.t - h.t > cfg.straightMaxRiseMs) break;
-        if (h.visible && h.ext < startExt) {
+        if (h.visible && h.ratio > startRatio) {
           start = h;
           break;
         }
@@ -149,7 +170,7 @@ export class HandPunchDetector {
         if (outward <= cfg.straightMaxOutward) {
           out.push({
             type: this.role() === "lead" ? "jab" : "cross",
-            score: (s.ext - startExt) / Math.max(0.01, peakExt - startExt),
+            score: (startRatio - s.ratio) / Math.max(0.01, startRatio - peakRatio),
             peak: s,
             startT: start.t,
           });
@@ -161,13 +182,25 @@ export class HandPunchDetector {
 
     // Hook.
     const lateral = s.v.x * towardCenter;
-    if (s.elbow >= cfg.hookMinElbow && s.elbow <= cfg.hookMaxElbow && lateral >= cfg.hookMinSpeed && atOrAboveShoulder) {
+    if (
+      s.elbow >= cfg.hookMinElbow &&
+      s.elbow <= cfg.hookMaxElbow &&
+      s.ratio >= cfg.hookMinUpperRatio &&
+      lateral >= cfg.hookMinSpeed &&
+      atOrAboveShoulder
+    ) {
       out.push({ type: "hook", score: lateral / cfg.hookMinSpeed, peak: s, startT: this.motionStart(s) });
     }
 
     // Uppercut.
     const up = -s.v.y;
-    if (up >= cfg.uppercutMinSpeed && s.elbow >= cfg.uppercutMinElbow && s.elbow <= cfg.uppercutMaxElbow) {
+    const otherUp = -frame.arms[this.side === "left" ? "right" : "left"].wristVelocityBody.y;
+    if (
+      up >= cfg.uppercutMinSpeed &&
+      otherUp < cfg.uppercutOtherHandMaxSpeed &&
+      s.elbow >= cfg.uppercutMinElbow &&
+      s.elbow <= cfg.uppercutMaxElbow
+    ) {
       const startedLow = this.history.some((h) => s.t - h.t <= cfg.uppercutLookbackMs && h.wrist.y > h.shoulderY);
       if (startedLow) out.push({ type: "uppercut", score: up / cfg.uppercutMinSpeed, peak: s, startT: this.motionStart(s) });
     }
@@ -181,8 +214,10 @@ export class HandPunchDetector {
   }
 
   private fire(c: Candidate): PunchEvent | null {
-    // Use the hand's highest-reaching point in the window for target height.
-    const target = this.target(c.peak);
+    // Uppercuts match mid-swing, so their target height is the highest point since.
+    let top = c.peak;
+    if (c.type === "uppercut") for (const h of this.history) if (h.t >= c.peak.t && h.visible && h.wrist.y < top.wrist.y) top = h;
+    const target = this.target(top);
     this.armed = false;
     this.lastFireT = c.peak.t;
     if (!target) return null;
