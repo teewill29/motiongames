@@ -25,8 +25,8 @@ it.runIf(process.env.WRITE_FIXTURES)("writes synthetic fixtures", () => {
   };
   write("jab-x5", punchSeries({ side: "left", path: ["straight"], count: 5, stepMs: [150] }));
   write("cross-x5", punchSeries({ side: "right", path: ["straight"], count: 5, stepMs: [150] }));
-  write("hook-lead-x5", punchSeries({ side: "left", path: ["hookWind", "hookFinish"], count: 5, stepMs: [200, 150] }));
-  write("hook-rear-x5", punchSeries({ side: "right", path: ["hookWind", "hookFinish"], count: 5, stepMs: [200, 150] }));
+  write("hook-lead-x5", punchSeries({ side: "left", path: ["hookWind", "hookFinish"], count: 5, stepMs: [150, 80] }));
+  write("hook-rear-x5", punchSeries({ side: "right", path: ["hookWind", "hookFinish"], count: 5, stepMs: [150, 80] }));
   write("uppercut-lead-x5", punchSeries({ side: "left", path: ["uppercutDip", "uppercutFinish"], count: 5, stepMs: [200, 150] }));
   write("uppercut-rear-x5", punchSeries({ side: "right", path: ["uppercutDip", "uppercutFinish"], count: 5, stepMs: [200, 150] }));
   const defense: Keyframe[] = [{ t: 0 }, { t: 600 }];

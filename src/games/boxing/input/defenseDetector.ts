@@ -51,7 +51,8 @@ export class DefenseDetector {
     Object.assign(this.signals, { guard: "none", slip: null, duck: false, lean: 0, drop: 0 });
   }
 
-  update(f: BodyFrame): DefenseEvent[] {
+  /** @param punching an arm is out in a punch right now (slips can't start). */
+  update(f: BodyFrame, punching = false): DefenseEvent[] {
     const events: DefenseEvent[] = [];
     const t = f.timestamp;
     if (!f.tracked || f.scale <= 0) {
@@ -84,8 +85,8 @@ export class DefenseDetector {
     const level = Math.abs(f.shoulderTilt) <= cfg.slipMaxTilt;
     let slip: SlipState = s.slip;
     if (slip === null) {
-      if (level && lean <= -cfg.slipThreshold) slip = "left";
-      else if (level && lean >= cfg.slipThreshold) slip = "right";
+      if (level && !punching && lean <= -cfg.slipThreshold) slip = "left";
+      else if (level && !punching && lean >= cfg.slipThreshold) slip = "right";
     } else if (Math.abs(lean) < cfg.slipThreshold * cfg.slipExitRatio || (slip === "left") !== lean < 0) {
       slip = null;
     }

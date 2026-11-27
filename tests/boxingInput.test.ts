@@ -31,9 +31,9 @@ describe("punch detection (orthodox, calibrated)", () => {
   });
 
   it("counts hooks with either hand", () => {
-    const lead = run(punchSeries({ side: "left", path: ["hookWind", "hookFinish"], count: 5, stepMs: [200, 150] }));
+    const lead = run(punchSeries({ side: "left", path: ["hookWind", "hookFinish"], count: 5, stepMs: [150, 80] }));
     expect(countPunches(lead)).toEqual({ hook: 5 });
-    const rear = run(punchSeries({ side: "right", path: ["hookWind", "hookFinish"], count: 5, stepMs: [200, 150] }));
+    const rear = run(punchSeries({ side: "right", path: ["hookWind", "hookFinish"], count: 5, stepMs: [150, 80] }));
     expect(countPunches(rear)).toEqual({ hook: 5 });
     expect(rear.punches.every((p) => p.hand === "right" && p.target === "head")).toBe(true);
   });

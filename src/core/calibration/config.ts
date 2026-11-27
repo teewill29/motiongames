@@ -36,7 +36,7 @@ export const calibrationConfig = {
   /** Punch peak threshold: guard ratio minus this fraction of the guard-to-punch gap. */
   peakFraction: 0.6,
   /** Slip and duck thresholds: this fraction of the calibrated slip or duck. */
-  slipFraction: 0.6,
+  slipFraction: 0.7,
   duckFraction: 0.6,
   /** Guard radius: the guard's furthest wrist-to-nose distance × this. */
   guardRadiusMargin: 1.3,

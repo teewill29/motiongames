@@ -42,7 +42,7 @@ export class HandPunchDetector {
   private history: Sample[] = [];
   private armed = true;
   private lastFireT = -Infinity;
-  private pending: { openedT: number; best: Map<PunchType, Candidate>; minRatio: number } | null = null;
+  private pending: { openedT: number; best: Map<PunchType, Candidate>; minRatio: number; maxLateral: number } | null = null;
 
   constructor(
     readonly side: Side,
@@ -82,27 +82,39 @@ export class HandPunchDetector {
 
     if (this.armed && s.visible && s.t - this.lastFireT >= cfg.cooldownMs) {
       for (const c of this.candidates(s, frame)) {
-        if (!this.pending) this.pending = { openedT: s.t, best: new Map(), minRatio: s.ratio };
+        if (!this.pending) this.pending = { openedT: s.t, best: new Map(), minRatio: s.ratio, maxLateral: this.recentLateral(s.t) };
         const prev = this.pending.best.get(c.type);
         if (!prev || c.score > prev.score) this.pending.best.set(c.type, c);
       }
     }
-    if (this.pending && s.visible) this.pending.minRatio = Math.min(this.pending.minRatio, s.ratio);
+    if (this.pending && s.visible) {
+      this.pending.minRatio = Math.min(this.pending.minRatio, s.ratio);
+      this.pending.maxLateral = Math.max(this.pending.maxLateral, this.lateral(s));
+    }
 
     if (this.pending && s.t - this.pending.openedT >= cfg.decisionWindowMs) {
-      const { best, minRatio } = this.pending;
+      const { best, minRatio, maxLateral } = this.pending;
       // An uppercut's target is where the fist tops out: wait while it's still rising.
       const onlyUppercut = best.size === 1 && best.has("uppercut");
       const rising = s.visible && -s.v.y > cfg.uppercutMinSpeed / 2;
       if (onlyUppercut && rising && s.t - this.pending.openedT < cfg.decisionWindowMs + cfg.uppercutPeakWaitMs) return null;
       this.pending = null;
-      // A straight is unmistakable (upper arm pointed at the camera), so it beats
-      // anything else in the window. A cross starts like a hook, sweeping toward
-      // the centerline, then turns the upper arm toward the camera: if the arm did
-      // that at any point in the window, it wasn't a hook.
-      if (minRatio < cfg.hookMinUpperRatio) best.delete("hook");
+
+      // Sideways speed separates straights from hooks: a jab barely moves the
+      // wrist sideways, a cross sweeps moderately, a hook fast. A tight hook
+      // also points the upper arm at the camera, so it can look like a straight.
+      const lateralCeiling = this.role() === "lead" ? cfg.jabMaxLateral : cfg.crossMaxLateral;
+      const fastSweep = maxLateral > lateralCeiling;
       const straight = best.get("jab") ?? best.get("cross");
-      const winner = straight ?? [...best.values()].sort((a, b) => b.score - a.score)[0];
+      if (straight && fastSweep) {
+        best.delete(straight.type);
+        if (!best.has("hook")) best.set("hook", { ...straight, type: "hook", score: maxLateral / lateralCeiling });
+      }
+      // A wide hook keeps the upper arm side-on. If it turned toward the camera
+      // without a fast sweep, it was a cross starting with a sideways sweep.
+      if (best.has("hook") && !fastSweep && minRatio < cfg.hookMinUpperRatio) best.delete("hook");
+      const stillStraight = fastSweep ? undefined : straight;
+      const winner = stillStraight ?? [...best.values()].sort((a, b) => b.score - a.score)[0];
       if (winner) return this.fire(winner);
     }
     return null;
@@ -136,6 +148,19 @@ export class HandPunchDetector {
       scale: f.scale,
       torso,
     };
+  }
+
+  /** Sideways wrist speed toward the body's centerline. */
+  private lateral(s: Sample): number {
+    return s.v.x * (this.side === "left" ? 1 : -1);
+  }
+
+  /** Fastest sideways speed toward the centerline since the motion began (a hook's sweep can precede the match). */
+  private recentLateral(now: number): number {
+    const start = this.motionStart(this.history[this.history.length - 1]!);
+    let max = 0;
+    for (const h of this.history) if (h.t >= start && h.t <= now && h.visible) max = Math.max(max, this.lateral(h));
+    return max;
   }
 
   /** Latest time before now that the hand was moving slowly: where the motion began. */
@@ -197,6 +222,7 @@ export class HandPunchDetector {
     const otherUp = -frame.arms[this.side === "left" ? "right" : "left"].wristVelocityBody.y;
     if (
       up >= cfg.uppercutMinSpeed &&
+      up >= cfg.uppercutMinVerticalRatio * Math.abs(s.v.x) &&
       otherUp < cfg.uppercutOtherHandMaxSpeed &&
       s.elbow >= cfg.uppercutMinElbow &&
       s.elbow <= cfg.uppercutMaxElbow

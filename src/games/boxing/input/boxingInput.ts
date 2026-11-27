@@ -18,9 +18,10 @@ export interface BoxingInputResult {
 export class BoxingInput {
   private readonly hands: [HandPunchDetector, HandPunchDetector];
   private readonly defense: DefenseDetector;
+  private lastPunchT = -Infinity;
 
   constructor(
-    cfg: BoxingConfig,
+    private readonly cfg: BoxingConfig,
     private stance: Stance,
     baseline: DefenseBaseline | null = null,
   ) {
@@ -53,13 +54,24 @@ export class BoxingInput {
     return this.hands[side === "left" ? 0 : 1].isArmed;
   }
 
+  /** An arm is out in a straight (upper arm turned toward the camera) or a punch just landed. */
+  private punching(frame: BodyFrame): boolean {
+    if (frame.timestamp - this.lastPunchT < this.cfg.slipPunchLockoutMs) return true;
+    return (["left", "right"] as const).some((side) => {
+      const start = roleOf(side, this.stance) === "lead" ? this.cfg.jabStartRatio : this.cfg.crossStartRatio;
+      const a = frame.arms[side];
+      return a.visible && a.upperArmRatio < start;
+    });
+  }
+
   update(frame: BodyFrame): BoxingInputResult {
     const punches: PunchEvent[] = [];
     for (const h of this.hands) {
       const p = h.update(frame);
       if (p) punches.push(p);
     }
-    const defense = this.defense.update(frame);
+    if (punches.length) this.lastPunchT = frame.timestamp;
+    const defense = this.defense.update(frame, this.punching(frame));
     return { punches, defense, signals: this.defense.signals };
   }
 }

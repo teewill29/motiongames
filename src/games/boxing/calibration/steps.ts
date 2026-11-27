@@ -105,7 +105,8 @@ export function punchStep(cfg: CalibrationConfig, draft: BoxingDraft, kind: "jab
   let samples: PunchSample[] = [];
   let inPunch = false;
   let restT = 0;
-  let peak: { ratio: number; elbowDrop: number; wristDrop: number; ext: number; t: number; speed: number } | null = null;
+  let recentLateral = 0;
+  let peak: { ratio: number; elbowDrop: number; wristDrop: number; ext: number; t: number; speed: number; lateral: number } | null = null;
   const side = (): Side => {
     const lead = leadSide(draft.stance);
     return kind === "jab" ? lead : lead === "left" ? "right" : "left";
@@ -132,23 +133,36 @@ export function punchStep(cfg: CalibrationConfig, draft: BoxingDraft, kind: "jab
       });
       if (!g || !f.tracked || !a.visible) return status();
       const speed = Math.hypot(a.wristVelocityBody.x, a.wristVelocityBody.y);
+      const lateral = a.wristVelocityBody.x * (side() === "left" ? 1 : -1);
       const elbowDrop = (a.elbow.y - f.shoulderMid.y) / f.scale;
       const wristDrop = (a.wrist.y - f.shoulderMid.y) / f.scale;
       const r = a.upperArmRatio;
       if (!inPunch) {
-        if (r >= g.upperRatio - cfg.punchMargin * 0.3) restT = f.timestamp;
+        if (r >= g.upperRatio - cfg.punchMargin * 0.3) {
+          restT = f.timestamp;
+          recentLateral = 0;
+        } else recentLateral = Math.max(recentLateral, lateral);
         if (r < g.upperRatio - cfg.punchMargin) {
           inPunch = true;
-          peak = { ratio: r, elbowDrop, wristDrop, ext: a.extension, t: f.timestamp, speed };
+          peak = { ratio: r, elbowDrop, wristDrop, ext: a.extension, t: f.timestamp, speed, lateral: Math.max(lateral, recentLateral) };
         }
       } else if (peak) {
-        if (r < peak.ratio) peak = { ratio: r, elbowDrop, wristDrop, ext: Math.max(peak.ext, a.extension), t: f.timestamp, speed: Math.max(peak.speed, speed) };
-        else peak.speed = Math.max(peak.speed, speed);
+        const keep = { speed: Math.max(peak.speed, speed), lateral: Math.max(peak.lateral, lateral) };
+        if (r < peak.ratio) peak = { ratio: r, elbowDrop, wristDrop, ext: Math.max(peak.ext, a.extension), t: f.timestamp, ...keep };
+        else Object.assign(peak, keep);
         if (r > g.upperRatio - cfg.punchMargin * 0.5) {
           const riseMs = peak.t - restT;
           // A slow drift of the arm is tracking noise or a reach, not a punch.
           if (riseMs <= cfg.punchMaxRiseMs) {
-            samples.push({ minRatio: peak.ratio, elbowDrop: peak.elbowDrop, wristDrop: peak.wristDrop, peakExt: peak.ext, riseMs, peakSpeed: peak.speed });
+            samples.push({
+              minRatio: peak.ratio,
+              elbowDrop: peak.elbowDrop,
+              wristDrop: peak.wristDrop,
+              peakExt: peak.ext,
+              riseMs,
+              peakSpeed: peak.speed,
+              maxLateral: peak.lateral,
+            });
           }
           inPunch = false;
           peak = null;

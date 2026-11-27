@@ -16,6 +16,11 @@ const ELBOW_DROP_ROOM = 0.15;
 const HEAD_ROOM = 0.15;
 /** Floor for the slip threshold: punches move the head this much on their own. */
 const MIN_SLIP_THRESHOLD = 0.25;
+/** Straight-punch sideways ceiling = fastest calibration straight × this. */
+const LATERAL_MARGIN = 1.75;
+/** Bounds for the derived ceilings, scale units/s. Real hooks measured 14 to 31. */
+const JAB_LATERAL_RANGE = [6, 12] as const;
+const CROSS_LATERAL_RANGE = [10, 18] as const;
 /** Extra room (scale units) below the calibrated guard's lowest wrist. */
 const GUARD_DROP_ROOM = 0.15;
 
@@ -50,6 +55,17 @@ export function deriveBoxingConfig(
     out.crossStartRatio = cross.start;
     out.crossPeakRatio = cross.peak;
   }
+
+  // Sideways-speed ceilings: comfortably above the player's own straights, below hooks.
+  const lateralCeiling = (samples: PunchSample[], lo: number, hi: number) =>
+    // Calibrations from before sideways speed was recorded leave the default.
+    samples.length && samples.every((s) => typeof s.maxLateral === "number")
+      ? clamp(Math.max(...samples.map((s) => s.maxLateral)) * LATERAL_MARGIN, lo, hi)
+      : undefined;
+  const jabLat = lateralCeiling(cal.punches.jab, JAB_LATERAL_RANGE[0], JAB_LATERAL_RANGE[1]);
+  if (jabLat !== undefined) out.jabMaxLateral = jabLat;
+  const crossLat = lateralCeiling(cal.punches.cross, CROSS_LATERAL_RANGE[0], CROSS_LATERAL_RANGE[1]);
+  if (crossLat !== undefined) out.crossMaxLateral = crossLat;
 
   const all = [...cal.punches.jab, ...cal.punches.cross];
   if (all.length > 0) {

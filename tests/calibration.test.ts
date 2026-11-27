@@ -105,9 +105,9 @@ describe("boxing calibration", () => {
       shoulderY: 0.3,
     },
     punches: {
-      jab: [{ minRatio: 0.45, elbowDrop: 0.3, wristDrop: 0.2, peakExt: 0.9, riseMs: 120, peakSpeed: 8 }],
+      jab: [{ minRatio: 0.45, elbowDrop: 0.3, wristDrop: 0.2, peakExt: 0.9, riseMs: 120, peakSpeed: 8, maxLateral: 3 }],
       // Barely moved the upper arm: not usable.
-      cross: [{ minRatio: 0.72, elbowDrop: 0.3, wristDrop: 0.2, peakExt: 0.8, riseMs: 120, peakSpeed: 8 }],
+      cross: [{ minRatio: 0.72, elbowDrop: 0.3, wristDrop: 0.2, peakExt: 0.8, riseMs: 120, peakSpeed: 8, maxLateral: 3 }],
     },
     slip: { left: 0.5, right: null },
     duck: null,

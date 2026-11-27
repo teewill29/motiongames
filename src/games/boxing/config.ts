@@ -23,16 +23,30 @@ export const boxingConfig = {
   straightMaxElbowDrop: 0.5,
   /** Max sideways wrist travel away from the centerline during a straight (rules out arms swung out to the side). */
   straightMaxOutward: 0.6,
+  /**
+   * Fastest sideways wrist speed toward the centerline (scale units/s) a jab or
+   * cross can have. Faster is a hook, even if the upper arm points at the
+   * camera like a straight (tight hooks do). The owner's jabs peak at 3 to 5,
+   * crosses at 7 to 9, hooks at 14 to 31. Calibration sets these per player.
+   */
+  jabMaxLateral: 8,
+  crossMaxLateral: 14,
 
-  // Hooks: bent elbow, fast sideways wrist motion toward the centerline, at or above shoulder height.
+  // Hooks: fast sideways wrist motion toward the centerline, at or above shoulder height.
+  // Either a wide hook (bent elbow, upper arm side-on), or any punch sweeping
+  // faster than the hand's straight-punch ceiling (jabMaxLateral/crossMaxLateral).
   hookMinElbow: 60,
   hookMaxElbow: 120,
-  hookMinSpeed: 2.5,
-  /** A hook's upper arm stays side-on (ratio above this); a cross sweeping across the body points it at the camera. */
+  /** Spec said 2.5; real data had the idle hand drifting at 3 to 4 while the other hand punched. */
+  hookMinSpeed: 6,
+  /** A wide hook's upper arm stays side-on (ratio above this). */
   hookMinUpperRatio: 0.55,
 
   // Uppercuts: fast upward wrist motion that started below shoulder height, bent elbow.
-  uppercutMinSpeed: 2.5,
+  /** Spec said 2.5; real data had recoil and guard adjustments at 3 to 4 and uppercuts at 7+. */
+  uppercutMinSpeed: 5,
+  /** The rise must dominate: upward speed at least this × sideways speed (a hook winding up also rises). */
+  uppercutMinVerticalRatio: 1.5,
   uppercutMinElbow: 50,
   uppercutMaxElbow: 120,
   /** How far back (ms) to look for the wrist having been below shoulder height. */
@@ -45,8 +59,8 @@ export const boxingConfig = {
   // Shared punch rules.
   /** Min time between punches from the same hand. */
   cooldownMs: 200,
-  /** Wrist speeds above this (scale units/s) are tracking glitches; such frames are ignored. */
-  maxWristSpeed: 20,
+  /** Wrist speeds above this (scale units/s) are tracking glitches; such frames are ignored. Real hooks reach about 30. */
+  maxWristSpeed: 45,
   /**
    * After the first frame that matches any punch, wait this long and pick the
    * strongest match. Long enough to see a cross's upper arm turn toward the
@@ -76,6 +90,8 @@ export const boxingConfig = {
   slipExitRatio: 0.7,
   /** Shoulders must stay within this tilt (degrees) for a slip. */
   slipMaxTilt: 35,
+  /** A cross carries the head sideways: no slip starts while an arm is out in a punch or this long (ms) after one. */
+  slipPunchLockoutMs: 500,
 
   // Duck: shoulder midpoint drops below its baseline, in torso lengths.
   duckThreshold: 0.25,
@@ -95,18 +111,21 @@ export const boxingConfigSpecs: TunableSpecs<BoxingConfig> = {
   straightMaxRiseMs: { min: 50, max: 800, step: 10, label: "Straight max rise (ms)" },
   straightMaxElbowDrop: { min: 0, max: 1.5, step: 0.01, label: "Straight max elbow drop" },
   straightMaxOutward: { min: 0.1, max: 2, step: 0.05, label: "Straight max outward" },
+  jabMaxLateral: { min: 1, max: 40, step: 0.5, label: "Jab max sideways speed" },
+  crossMaxLateral: { min: 1, max: 40, step: 0.5, label: "Cross max sideways speed" },
   hookMinElbow: { min: 0, max: 180, step: 1, label: "Hook min elbow (°)" },
   hookMaxElbow: { min: 0, max: 180, step: 1, label: "Hook max elbow (°)" },
-  hookMinSpeed: { min: 0.5, max: 10, step: 0.1, label: "Hook min speed" },
+  hookMinSpeed: { min: 0.5, max: 30, step: 0.1, label: "Hook min speed" },
   hookMinUpperRatio: { min: 0, max: 1.5, step: 0.01, label: "Hook min upper arm ratio" },
-  uppercutMinSpeed: { min: 0.5, max: 10, step: 0.1, label: "Uppercut min speed" },
+  uppercutMinSpeed: { min: 0.5, max: 20, step: 0.1, label: "Uppercut min speed" },
+  uppercutMinVerticalRatio: { min: 0, max: 5, step: 0.1, label: "Uppercut vertical ratio" },
   uppercutMinElbow: { min: 0, max: 180, step: 1, label: "Uppercut min elbow (°)" },
   uppercutMaxElbow: { min: 0, max: 180, step: 1, label: "Uppercut max elbow (°)" },
   uppercutLookbackMs: { min: 50, max: 800, step: 10, label: "Uppercut lookback (ms)" },
   uppercutPeakWaitMs: { min: 0, max: 400, step: 10, label: "Uppercut peak wait (ms)" },
   uppercutOtherHandMaxSpeed: { min: 0.2, max: 10, step: 0.1, label: "Uppercut other hand max" },
   cooldownMs: { min: 0, max: 1000, step: 10, label: "Hand cooldown (ms)" },
-  maxWristSpeed: { min: 5, max: 60, step: 1, label: "Glitch speed" },
+  maxWristSpeed: { min: 5, max: 100, step: 1, label: "Glitch speed" },
   decisionWindowMs: { min: 0, max: 300, step: 1, label: "Decision window (ms)" },
   rearmSpeed: { min: 0.2, max: 10, step: 0.1, label: "Re-arm speed" },
   headTolerance: { min: 0, max: 1, step: 0.01, label: "Head tolerance" },
@@ -118,6 +137,7 @@ export const boxingConfigSpecs: TunableSpecs<BoxingConfig> = {
   slipThreshold: { min: 0.05, max: 1.5, step: 0.01, label: "Slip threshold" },
   slipExitRatio: { min: 0.1, max: 1, step: 0.05, label: "Slip exit ratio" },
   slipMaxTilt: { min: 0, max: 90, step: 1, label: "Slip max tilt (°)" },
+  slipPunchLockoutMs: { min: 0, max: 1000, step: 10, label: "Slip punch lockout (ms)" },
   duckThreshold: { min: 0.05, max: 1, step: 0.01, label: "Duck threshold (torso)" },
   duckExitRatio: { min: 0.1, max: 1, step: 0.05, label: "Duck exit ratio" },
   baselineAdaptMs: { min: 0, max: 20000, step: 500, label: "Baseline adapt (ms)" },

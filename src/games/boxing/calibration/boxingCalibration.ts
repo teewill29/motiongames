@@ -21,6 +21,8 @@ export interface PunchSample {
   riseMs: number;
   /** Peak wrist speed, scale units/s. */
   peakSpeed: number;
+  /** Fastest sideways wrist speed toward the centerline, scale units/s. */
+  maxLateral: number;
 }
 
 /** Boxing-specific calibration results, stored next to the shared profile. */
