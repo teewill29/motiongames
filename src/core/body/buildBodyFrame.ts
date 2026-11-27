@@ -6,6 +6,9 @@ import type { Landmark, RawPoseFrame } from "../pose/types";
 import type { ArmState, BodyFrame, BodyPoint, Side } from "./bodyFrame";
 import { angle3, dist2, dist3, mid2, type Vec2 } from "./geometry";
 
+/** The part of the calibration profile BodyFrame needs. Mid-calibration only this exists. */
+export type ArmProfile = Pick<CalibrationProfile, "armLength">;
+
 const ARM_LANDMARKS: Record<Side, { shoulder: number; elbow: number; wrist: number }> = {
   left: { shoulder: LM.leftShoulder, elbow: LM.leftElbow, wrist: LM.leftWrist },
   right: { shoulder: LM.rightShoulder, elbow: LM.rightElbow, wrist: LM.rightWrist },
@@ -53,6 +56,7 @@ function emptyArm(): ArmState {
     reach: 0,
     wrist: ZERO,
     wristVelocity: ZERO,
+    wristVelocityBody: ZERO,
     wristVelocityZ: 0,
   };
 }
@@ -66,6 +70,8 @@ function untrackedFrame(raw: RawPoseFrame): BodyFrame {
     world: [],
     visible: Object.fromEntries(KEY_LANDMARK_NAMES.map((n) => [n, false])) as Record<KeyLandmarkName, boolean>,
     shoulderWidth: 0,
+    scale: 0,
+    shoulderTilt: 0,
     shoulderMid: ZERO,
     hipMid: ZERO,
     torsoLength: 0,
@@ -83,16 +89,18 @@ export class BodyFrameBuilder {
   private readonly imageSmoother: LandmarkSmoother;
   private readonly worldSmoother: LandmarkSmoother;
   private prev: BodyFrame | null = null;
+  /** Recent (timestamp, shoulder width) samples for the scale window. */
+  private widths: { t: number; w: number }[] = [];
 
   constructor(
     private readonly config: PoseConfig,
-    private profile: CalibrationProfile | null = null,
+    private profile: ArmProfile | null = null,
   ) {
     this.imageSmoother = new LandmarkSmoother(config);
     this.worldSmoother = new LandmarkSmoother(config);
   }
 
-  setProfile(profile: CalibrationProfile | null): void {
+  setProfile(profile: ArmProfile | null): void {
     this.profile = profile;
   }
 
@@ -100,6 +108,16 @@ export class BodyFrameBuilder {
     this.imageSmoother.reset();
     this.worldSmoother.reset();
     this.prev = null;
+    this.widths = [];
+  }
+
+  /** Window max of shoulder width. */
+  private updateScale(t: number, width: number): number {
+    this.widths.push({ t, w: width });
+    while (this.widths.length > 1 && t - this.widths[0]!.t > this.config.scaleWindowMs) this.widths.shift();
+    let max = 0;
+    for (const s of this.widths) if (s.w > max) max = s.w;
+    return max;
   }
 
   build(raw: RawPoseFrame): BodyFrame {
@@ -122,6 +140,10 @@ export class BodyFrameBuilder {
 
     const at = (i: number) => landmarks[i]!;
     const shoulderWidth = dist2(at(LM.leftShoulder), at(LM.rightShoulder));
+    const scale = this.updateScale(t, shoulderWidth);
+    // View x: player's left shoulder is on the left. Positive tilt = right shoulder lower (y down).
+    const ls = at(LM.leftShoulder), rs = at(LM.rightShoulder);
+    const shoulderTilt = (Math.atan2(rs.y - ls.y, rs.x - ls.x) * 180) / Math.PI;
     const shoulderMid = mid2(at(LM.leftShoulder), at(LM.rightShoulder));
     const hipMid = mid2(at(LM.leftHip), at(LM.rightHip));
     const torsoLength = dist2(shoulderMid, hipMid);
@@ -137,19 +159,24 @@ export class BodyFrameBuilder {
       const armLength = this.profile?.armLength[side] ?? dist3(ws, we) + dist3(we, ww);
       const wrist = { x: w.x, y: w.y };
       let wristVelocity = ZERO;
+      let wristVelocityBody = ZERO;
       let wristVelocityZ = 0;
-      if (prev && dt > 0 && shoulderWidth > 0) {
+      if (prev && dt > 0 && scale > 0) {
         const pw = prev.arms[side].wrist;
-        wristVelocity = { x: (wrist.x - pw.x) / dt / shoulderWidth, y: (wrist.y - pw.y) / dt / shoulderWidth };
+        wristVelocity = { x: (wrist.x - pw.x) / dt / scale, y: (wrist.y - pw.y) / dt / scale };
+        const bx = (shoulderMid.x - prev.shoulderMid.x) / dt / scale;
+        const by = (shoulderMid.y - prev.shoulderMid.y) / dt / scale;
+        wristVelocityBody = { x: wristVelocity.x - bx, y: wristVelocity.y - by };
         wristVelocityZ = (ww.z - prev.world[ids.wrist]!.z) / dt;
       }
       return {
         visible: [ids.shoulder, ids.elbow, ids.wrist].every((i) => landmarks[i]!.visibility >= minVis),
         extension: armLength > 0 ? dist3(ws, ww) / armLength : 0,
         elbowAngle: angle3(ws, we, ww),
-        reach: shoulderWidth > 0 ? dist2(s, w) / shoulderWidth : 0,
+        reach: scale > 0 ? dist2(s, w) / scale : 0,
         wrist,
         wristVelocity,
+        wristVelocityBody,
         wristVelocityZ,
       };
     };
@@ -162,6 +189,8 @@ export class BodyFrameBuilder {
       world,
       visible,
       shoulderWidth,
+      scale,
+      shoulderTilt,
       shoulderMid,
       hipMid,
       torsoLength,

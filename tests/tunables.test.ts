@@ -60,3 +60,19 @@ describe("SettingsStore", () => {
     expect(new SettingsStore(storage).get().cameraFps).toBe(60);
   });
 });
+
+describe("TunableRegistry.setDefaults", () => {
+  it("changes what Reset returns to, optionally applying now", () => {
+    const storage = new MemoryStore();
+    const cfg = { a: 0.5, b: 15 };
+    const reg = new TunableRegistry(storage);
+    reg.register("g", "Group", cfg, specs);
+    reg.setDefaults("g", { a: 0.7 }, false);
+    expect(cfg.a).toBe(0.5);
+    reg.reset("g");
+    expect(cfg.a).toBe(0.7);
+    reg.setDefaults("g", { b: 12 }, true);
+    expect(cfg.b).toBe(12);
+    expect(storage.get<Record<string, number>>("tunables.g")!.b).toBe(12);
+  });
+});

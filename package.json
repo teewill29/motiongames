@@ -11,7 +11,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "postinstall": "node scripts/setup-mediapipe.mjs",
-    "fixtures:synthetic": "node scripts/make-synthetic-fixture.ts"
+    "fixtures:synthetic": "WRITE_FIXTURES=1 vitest run tests/generateFixtures.test.ts"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.2.3"

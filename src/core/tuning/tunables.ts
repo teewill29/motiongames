@@ -48,7 +48,7 @@ export class TunableRegistry {
     const existing = this.groups.get(id);
     if (existing) return existing as unknown as TunableGroup<T>;
 
-    const group: TunableGroup<T> = { id, label, values, defaults: { ...values }, specs };
+    const group: TunableGroup<T> = { id, label, values, defaults: { ...values } as Readonly<T>, specs };
     const saved = this.storage?.get<Record<string, number>>(storageKey(id));
     if (saved) {
       for (const key of Object.keys(values) as (keyof T & string)[]) {
@@ -58,6 +58,11 @@ export class TunableRegistry {
     }
     this.groups.set(id, group as unknown as TunableGroup);
     return group;
+  }
+
+  /** What Reset would return a group to. */
+  defaultsOf(groupId: string): Readonly<Record<string, number>> | undefined {
+    return this.groups.get(groupId)?.defaults;
   }
 
   list(): TunableGroup[] {
@@ -72,6 +77,26 @@ export class TunableRegistry {
     group.values[key] = clamped;
     this.save(group);
     for (const l of this.listeners) l(groupId, key, clamped);
+  }
+
+  /**
+   * Replaces a group's defaults (what Reset returns to), e.g. with values
+   * derived from calibration. With `apply`, also sets the current values,
+   * overriding saved tweaks.
+   */
+  setDefaults(groupId: string, values: Record<string, number>, apply: boolean): void {
+    const group = this.groups.get(groupId);
+    if (!group) return;
+    const defaults = group.defaults as Record<string, number>;
+    for (const [key, v] of Object.entries(values)) {
+      if (!(key in group.values) || !Number.isFinite(v)) continue;
+      defaults[key] = v;
+      if (apply) {
+        group.values[key] = v;
+        for (const l of this.listeners) l(groupId, key, v);
+      }
+    }
+    if (apply) this.save(group);
   }
 
   reset(groupId: string): void {

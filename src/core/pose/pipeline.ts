@@ -1,6 +1,5 @@
 import type { BodyFrame } from "../body/bodyFrame";
-import { BodyFrameBuilder } from "../body/buildBodyFrame";
-import type { CalibrationProfile } from "../calibration/profile";
+import { BodyFrameBuilder, type ArmProfile } from "../body/buildBodyFrame";
 import type { PoseConfig } from "./config";
 import type { RawPoseFrame } from "./types";
 
@@ -15,7 +14,7 @@ export class PosePipeline {
   private readonly listeners = new Set<Listener>();
   latest: BodyFrame | null = null;
 
-  constructor(config: PoseConfig, profile: CalibrationProfile | null = null) {
+  constructor(config: PoseConfig, profile: ArmProfile | null = null) {
     this.builder = new BodyFrameBuilder(config, profile);
   }
 
@@ -36,7 +35,7 @@ export class PosePipeline {
     this.latest = null;
   }
 
-  setProfile(profile: CalibrationProfile | null): void {
+  setProfile(profile: ArmProfile | null): void {
     this.builder.setProfile(profile);
   }
 

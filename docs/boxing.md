@@ -214,6 +214,12 @@ Shared calibration plus the boxing steps. A screen that labels every detected pu
 
 **Done when:** in testing with the real setup, 9 out of 10 punches of each type are labeled correctly, guard, slip and duck are reliable, and fixture-based tests pass for each punch type.
 
+**Implementation notes:**
+- Calibration derives the per-player thresholds: jab and cross start and peak extension sit between the player's own guard extension and their calibrated punch peaks (an early recording had a rear-hand guard at 0.75 extension, so a fixed 0.55 would never re-arm). Slip, duck and guard zone thresholds come from the calibrated ranges. The derived values become the sliders' Reset values. See `games/boxing/calibration/derive.ts`.
+- Guard height is calibrated too (`guardMaxDrop`): wrists may sit a little below the shoulder line if that's the player's guard.
+- Slip is measured as the head's offset from the hips, so stepping sideways doesn't read as a slip.
+- Recordings made on the detection screen carry the calibration in effect. Labeled ones become test fixtures through `tests/fixtures/manifest.json`.
+
 ### Phase 2: One opponent
 
 Dusty Hale as a placeholder puppet, with health bars, the opponent state machine, two attacks with tells, block and slip, and counters. One untimed round.

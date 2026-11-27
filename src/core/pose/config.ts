@@ -16,6 +16,8 @@ export const poseConfig = {
   minVisibility: 0.5,
   /** A gap longer than this (ms) between poses resets smoothing and velocity. */
   resetGapMs: 500,
+  /** Window (ms) for BodyFrame.scale, the max shoulder width that ignores torso turns. */
+  scaleWindowMs: 1500,
 };
 
 export type PoseConfig = typeof poseConfig;
@@ -26,4 +28,5 @@ export const poseConfigSpecs: TunableSpecs<PoseConfig> = {
   dCutoff: { min: 0.1, max: 5, step: 0.1, label: "Smoothing d-cutoff (Hz)" },
   minVisibility: { min: 0, max: 1, step: 0.05, label: "Min visibility" },
   resetGapMs: { min: 50, max: 2000, step: 50, label: "Reset gap (ms)" },
+  scaleWindowMs: { min: 0, max: 5000, step: 100, label: "Body scale window (ms)" },
 };

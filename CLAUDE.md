@@ -45,4 +45,5 @@ Work phase by phase. Each phase has acceptance criteria. Finish and demo a phase
 - `npm run build`: typecheck and production build into `dist/`
 - `npm test`: unit tests (Vitest)
 - `npm run typecheck`: strict TypeScript check for app, tests and scripts
-- `npm run fixtures:synthetic`: regenerate the synthetic test fixture in `tests/fixtures/`
+- `npm run fixtures:synthetic`: regenerate the synthetic test fixtures in `tests/fixtures/`
+- Owner recordings become fixtures by adding them to `tests/fixtures/manifest.json` (see `tests/fixtures/README.md`)

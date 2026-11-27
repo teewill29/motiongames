@@ -69,11 +69,12 @@ Every pose result becomes a `BodyFrame`:
 
 - `timestamp` (ms)
 - landmarks smoothed with a One Euro filter (tunable; low lag matters more than perfect smoothness)
-- `shoulderWidth` as the base unit of distance
+- `shoulderWidth` (this frame's) and `scale`, the base unit of distance: the widest shoulder width over the last 1.5 s. Turning the torso to punch shrinks the 2D shoulder width by up to 40%; the window max ignores that and still follows the player stepping closer or farther.
 - `shoulderMid`, `hipMid`, `torsoLength`
 - per-arm `extension` = shoulder-to-wrist distance / calibrated arm length (0 = fist at shoulder, 1 = arm straight)
 - per-arm `elbowAngle` in degrees
-- per-wrist velocity in shoulder widths per second, x and y
+- per-wrist velocity in scale units per second, x and y, both on screen and relative to the shoulder midpoint (`wristVelocityBody`). Detectors use the body-relative one, so slipping or ducking with the hands up doesn't read as a hook or uppercut.
+- `shoulderTilt` in degrees
 - `visibility` flags, so detectors can ignore low-confidence landmarks
 - `tracked: boolean`, false when no pose was found or key landmarks have low visibility
 

@@ -22,12 +22,18 @@ export interface ArmState {
   extension: number;
   /** Elbow angle in degrees from world landmarks (180 = straight). */
   elbowAngle: number;
-  /** 2D shoulder-to-wrist distance on screen, in shoulder widths. */
+  /** 2D shoulder-to-wrist distance on screen, in body scale units (see BodyFrame.scale). */
   reach: number;
   /** Wrist position in view space. */
   wrist: Vec2;
-  /** Wrist velocity in view space, shoulder widths per second. +x = player's right, +y = down. */
+  /** Wrist velocity in view space, body scale units per second. +x = player's right, +y = down. */
   wristVelocity: Vec2;
+  /**
+   * Wrist velocity relative to the shoulder midpoint, scale units/s. Moving the
+   * whole upper body (slipping, ducking, stepping) leaves this near zero, so
+   * detectors use it to tell hand motion from body motion.
+   */
+  wristVelocityBody: Vec2;
   /** Wrist depth velocity from world landmarks, m/s. Negative = toward the camera. */
   wristVelocityZ: number;
 }
@@ -52,8 +58,17 @@ export interface BodyFrame {
   /** All 33 smoothed world landmarks. Empty when no pose was found. */
   world: BodyPoint[];
   visible: Record<KeyLandmarkName, boolean>;
-  /** Base unit of distance, in view units. */
+  /** This frame's 2D shoulder width, in view units. Shrinks when the torso turns. */
   shoulderWidth: number;
+  /**
+   * Base unit of distance, in view units: the widest shoulder width seen over the
+   * last `poseConfig.scaleWindowMs`. Turning the torso to punch shrinks the 2D
+   * shoulder width for a moment; the window max ignores that, while still
+   * following the player when they step closer or farther.
+   */
+  scale: number;
+  /** Shoulder line angle from horizontal, degrees. Positive = player's right shoulder lower. */
+  shoulderTilt: number;
   shoulderMid: Vec2;
   hipMid: Vec2;
   /** shoulderMid to hipMid, in view units. */

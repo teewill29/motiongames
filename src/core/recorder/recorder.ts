@@ -7,6 +7,7 @@ export class PoseRecorder {
   private startT: number | null = null;
   private meta: RecordingMeta | null = null;
   private startedAt = "";
+  private context: Record<string, unknown> | undefined;
 
   get recording(): boolean {
     return this.meta !== null;
@@ -21,10 +22,11 @@ export class PoseRecorder {
     return this.frames.length ? this.frames[this.frames.length - 1]!.t : 0;
   }
 
-  start(meta: RecordingMeta): void {
+  start(meta: RecordingMeta, context?: Record<string, unknown>): void {
     this.frames = [];
     this.startT = null;
     this.meta = meta;
+    this.context = context;
     this.startedAt = new Date().toISOString();
   }
 
@@ -49,6 +51,7 @@ export class PoseRecorder {
       createdAt: this.startedAt,
       label,
       meta,
+      ...(this.context ? { context: this.context } : {}),
       frames: this.frames,
     };
     this.frames = [];

@@ -1,4 +1,5 @@
 import { parseRecording, RecordingFormatError } from "../../core/recorder/format";
+import { boxingContextOf } from "../../games/boxing/recordingContext";
 import { h } from "../dom";
 import type { AppContext, Screen } from "../screen";
 
@@ -35,11 +36,13 @@ export class HubScreen implements Screen {
     const grid = h(
       "div",
       { class: "tiles" },
-      tile("Boxing", "Coming in Phase 2", null),
+      tile("Boxing", "Fights arrive in Phase 2", null),
+      tile("Boxing: Detection Test", "Every punch and defense, labeled live", () => this.app.navigate({ name: "boxingDetection", mode: { kind: "live" } }), "1"),
+      tile("Boxing: Calibrate", "Stance, reach, guard, punches, slips", () => this.app.navigate({ name: "boxingCalibration" }), "2"),
+      tile("Pose Test", "Camera, skeleton and recorder", () => this.app.navigate({ name: "poseTest", mode: { kind: "live" } }), "3"),
+      tile("Replay", "Load a recorded pose session", () => this.fileInput.click(), "4"),
+      tile("Settings", "Camera and tracking model", () => this.app.navigate({ name: "settings" }), "5"),
       tile("Treadmill Runner", "Planned", null),
-      tile("Pose Test", "Camera, skeleton and recorder", () => this.app.navigate({ name: "poseTest", mode: "live" }), "1"),
-      tile("Replay", "Load a recorded pose session", () => this.fileInput.click(), "2"),
-      tile("Settings", "Camera and tracking model", () => this.app.navigate({ name: "settings" }), "3"),
     );
 
     const drop = h("p", { class: "hub-hint" }, "Drop a recording .json anywhere to replay it. F toggles fullscreen.");
@@ -59,16 +62,17 @@ export class HubScreen implements Screen {
   }
 
   onKey(e: KeyboardEvent): boolean {
-    switch (e.key) {
-      case "1":
-        this.app.navigate({ name: "poseTest", mode: "live" });
-        return true;
-      case "2":
-        this.fileInput.click();
-        return true;
-      case "3":
-        this.app.navigate({ name: "settings" });
-        return true;
+    const routes: Record<string, () => void> = {
+      "1": () => this.app.navigate({ name: "boxingDetection", mode: { kind: "live" } }),
+      "2": () => this.app.navigate({ name: "boxingCalibration" }),
+      "3": () => this.app.navigate({ name: "poseTest", mode: { kind: "live" } }),
+      "4": () => this.fileInput.click(),
+      "5": () => this.app.navigate({ name: "settings" }),
+    };
+    const go = routes[e.key];
+    if (go) {
+      go();
+      return true;
     }
     return false;
   }
@@ -81,13 +85,17 @@ export class HubScreen implements Screen {
   };
 
   private async openRecording(file: File): Promise<void> {
+    let recording;
     try {
-      const recording = parseRecording(await file.text());
-      this.app.navigate({ name: "poseTest", mode: "replay", recording, fileName: file.name });
+      recording = parseRecording(await file.text());
     } catch (err) {
       this.error.hidden = false;
       this.error.textContent =
         err instanceof RecordingFormatError ? `${file.name}: ${err.message}` : `Could not open ${file.name}.`;
+      return;
     }
+    const mode = { kind: "replay" as const, recording, fileName: file.name };
+    // Boxing recordings replay through the detectors with the calibration saved in them.
+    this.app.navigate(boxingContextOf(recording) ? { name: "boxingDetection", mode } : { name: "poseTest", mode });
   }
 }

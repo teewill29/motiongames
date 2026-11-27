@@ -1,0 +1,11 @@
+{
+  "fixtures": [
+    { "file": "synthetic-jab-x5.json", "expect": { "jab": 5, "jab:head": 5 }, "tolerance": 0, "source": "synthetic" },
+    { "file": "synthetic-cross-x5.json", "expect": { "cross": 5 }, "tolerance": 0, "source": "synthetic" },
+    { "file": "synthetic-hook-lead-x5.json", "expect": { "hook": 5 }, "tolerance": 0, "source": "synthetic" },
+    { "file": "synthetic-hook-rear-x5.json", "expect": { "hook": 5 }, "tolerance": 0, "source": "synthetic" },
+    { "file": "synthetic-uppercut-lead-x5.json", "expect": { "uppercut": 5 }, "tolerance": 0, "source": "synthetic" },
+    { "file": "synthetic-uppercut-rear-x5.json", "expect": { "uppercut": 5 }, "tolerance": 0, "source": "synthetic" },
+    { "file": "synthetic-defense-x2.json", "expect": { "slip:left": 2, "slip:right": 2, "duck": 2 }, "tolerance": 0, "source": "synthetic" }
+  ]
+}

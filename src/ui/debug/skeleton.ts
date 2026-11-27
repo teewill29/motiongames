@@ -72,10 +72,10 @@ export function drawSkeleton(
     ctx.fillText(label, x, y);
   }
 
-  // Shoulder-width scale bar under the shoulders: the unit every detector uses.
+  // Body scale bar under the shoulders: the unit every detector uses.
   if (frame.tracked) {
     const y = py(frame.shoulderMid.y) + 18 * scale;
-    const half = (frame.shoulderWidth / frame.imageAspect) * rect.w * 0.5;
+    const half = (frame.scale / frame.imageAspect) * rect.w * 0.5;
     const cx = px(frame.shoulderMid.x);
     ctx.strokeStyle = "rgba(120,190,255,0.9)";
     ctx.lineWidth = 3;

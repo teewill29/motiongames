@@ -36,6 +36,12 @@ export interface PoseRecording {
   /** Free text, e.g. "jab-cross-x10". */
   label: string;
   meta: RecordingMeta;
+  /**
+   * What the game knew when recording: calibration, stance, etc. Games define
+   * and validate their own shape (e.g. games/boxing/recordingContext.ts), so
+   * a labeled recording can be replayed as a test fixture with the same setup.
+   */
+  context?: Record<string, unknown>;
   frames: RecordedFrame[];
 }
 
@@ -108,6 +114,7 @@ export function parseRecording(json: string): PoseRecording {
     createdAt: typeof d.createdAt === "string" ? d.createdAt : "",
     label: typeof d.label === "string" ? d.label : "",
     meta: m,
+    ...(d.context && typeof d.context === "object" ? { context: d.context } : {}),
     frames: d.frames,
   };
 }

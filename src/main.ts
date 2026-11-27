@@ -1,9 +1,15 @@
 import "./style.css";
 import { InputEventBus } from "./core/events/inputEvents";
+import { calibrationConfig, calibrationConfigSpecs } from "./core/calibration/config";
 import { poseConfig, poseConfigSpecs } from "./core/pose/config";
 import { SettingsStore } from "./core/settings/settings";
 import { LocalStorageStore } from "./core/storage/storage";
 import { TunableRegistry } from "./core/tuning/tunables";
+import { loadBoxingCalibration } from "./games/boxing/calibration/boxingCalibration";
+import { deriveBoxingConfig } from "./games/boxing/calibration/derive";
+import { BOXING_SPEC_DEFAULTS, boxingConfig, boxingConfigSpecs } from "./games/boxing/config";
+import { BoxingCalibrationScreen } from "./games/boxing/ui/calibrationScreen";
+import { DetectionTestScreen } from "./games/boxing/ui/detectionTestScreen";
 import { HubScreen } from "./ui/hub/hubScreen";
 import { PoseTestScreen } from "./ui/posetest/poseTestScreen";
 import type { AppContext, Route, Screen } from "./ui/screen";
@@ -11,7 +17,16 @@ import { SettingsScreen } from "./ui/settings/settingsScreen";
 
 const storage = new LocalStorageStore();
 const tunables = new TunableRegistry(storage);
+tunables.register("boxing", "Boxing detection", boxingConfig, boxingConfigSpecs);
 tunables.register("pose", "Pose smoothing", poseConfig, poseConfigSpecs);
+tunables.register("calibration", "Calibration", calibrationConfig, calibrationConfigSpecs);
+// Slider Reset returns to the player's calibrated thresholds, not the spec defaults.
+const savedBoxingCalibration = loadBoxingCalibration(storage);
+if (savedBoxingCalibration) {
+  // Apply them too if nothing has been tuned yet.
+  const untuned = storage.get("tunables.boxing") === undefined;
+  tunables.setDefaults("boxing", deriveBoxingConfig(savedBoxingCalibration, BOXING_SPEC_DEFAULTS, calibrationConfig), untuned);
+}
 
 const root = document.getElementById("app")!;
 let current: Screen | null = null;
@@ -31,12 +46,11 @@ function createScreen(route: Route): Screen {
     case "settings":
       return new SettingsScreen(app);
     case "poseTest":
-      return new PoseTestScreen(
-        app,
-        route.mode === "live"
-          ? { kind: "live" }
-          : { kind: "replay", recording: route.recording, fileName: route.fileName },
-      );
+      return new PoseTestScreen(app, route.mode);
+    case "boxingCalibration":
+      return new BoxingCalibrationScreen(app);
+    case "boxingDetection":
+      return new DetectionTestScreen(app, route.mode);
   }
 }
 
