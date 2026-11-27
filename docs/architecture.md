@@ -94,8 +94,9 @@ Re-check the player's distance from the camera at the start of each session. If 
 
 Claude Code can't use a live camera, so this tool is essential for development and tests.
 
-- Hotkey `R` in the debug overlay starts and stops recording `BodyFrame`s with timestamps to a JSON file (downloaded through the browser).
-- Replay mode feeds a recorded file through the pipeline in place of the camera, at real speed or stepped frame by frame.
+- Hotkey `R` on the pose screen starts and stops recording to a JSON file (downloaded through the browser).
+- Recordings store the raw tracker output (image and world landmarks with timestamps), not derived `BodyFrame`s. Replay rebuilds `BodyFrame`s through the current pipeline, so old recordings stay valid when smoothing or `BodyFrame` math changes. Format: `src/core/recorder/format.ts`.
+- Replay mode feeds a recorded file through the pipeline in place of the camera, at real speed (0.1x to 2x) or stepped frame by frame.
 - Store labeled recordings in `tests/fixtures/` (for example `jab-cross-x10.json` or `slip-left-right.json`).
 - Detector tests run fixtures through the input layer and assert on the events that come out, with tolerances.
 

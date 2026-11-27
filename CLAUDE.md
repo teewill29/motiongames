@@ -40,8 +40,9 @@ Work phase by phase. Each phase has acceptance criteria. Finish and demo a phase
 
 ## Commands
 
-Set these up in Phase 0 and keep this section current:
-
-- `npm run dev`: local dev server (localhost allows camera access)
-- `npm run build`: production build
-- `npm test`: unit tests
+- `npm install`: installs dependencies, copies the MediaPipe wasm into `public/mediapipe/` and downloads the pose models (falls back to the CDN at runtime if the download failed)
+- `npm run dev`: local dev server at http://localhost:5173 (localhost allows camera access)
+- `npm run build`: typecheck and production build into `dist/`
+- `npm test`: unit tests (Vitest)
+- `npm run typecheck`: strict TypeScript check for app, tests and scripts
+- `npm run fixtures:synthetic`: regenerate the synthetic test fixture in `tests/fixtures/`

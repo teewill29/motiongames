@@ -1,0 +1,6 @@
+node_modules/
+dist/
+# Copied/downloaded by scripts/setup-mediapipe.mjs on npm install
+public/mediapipe/
+*.local
+.DS_Store
