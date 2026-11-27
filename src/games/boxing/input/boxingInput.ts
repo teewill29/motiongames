@@ -19,6 +19,7 @@ export class BoxingInput {
   private readonly hands: [HandPunchDetector, HandPunchDetector];
   private readonly defense: DefenseDetector;
   private lastPunchT = -Infinity;
+  private lastPunch: PunchEvent | null = null;
 
   constructor(
     private readonly cfg: BoxingConfig,
@@ -68,7 +69,12 @@ export class BoxingInput {
     const punches: PunchEvent[] = [];
     for (const h of this.hands) {
       const p = h.update(frame);
-      if (p) punches.push(p);
+      if (!p) continue;
+      // The other hand pulls back during a punch and can look like it's rising into an uppercut.
+      const other = this.lastPunch && this.lastPunch.hand !== p.hand ? this.lastPunch : null;
+      if (p.type === "uppercut" && other && p.timestamp - other.timestamp < this.cfg.uppercutRecoilLockoutMs) continue;
+      punches.push(p);
+      this.lastPunch = p;
     }
     if (punches.length) this.lastPunchT = frame.timestamp;
     const defense = this.defense.update(frame, this.punching(frame));

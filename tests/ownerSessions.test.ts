@@ -7,7 +7,7 @@ import { defenseBaseline } from "../src/games/boxing/calibration/derive";
 import { BoxingInput } from "../src/games/boxing/input/boxingInput";
 import type { PunchEvent } from "../src/games/boxing/types";
 import { runCalibration } from "./helpers/boxingSetup";
-import { loadFixture } from "./helpers/fixtures";
+import { detectFixture, loadFixture } from "./helpers/fixtures";
 
 /**
  * The owner's real calibration sessions (orthodox, MacBook camera). In each,
@@ -75,5 +75,28 @@ describe.each(SESSIONS)("owner session $file", (session) => {
 
   it("calls the player's normal punches head shots", () => {
     expect(between([session.jabs[0], session.crosses[1]]).filter((p) => p.target !== "head")).toEqual([]);
+  });
+});
+
+/**
+ * Labeled "cross-x10" from the detection test screen, with the calibration
+ * it was recorded with. The owner threw jabs first (8–32 s), then crosses (40–62 s).
+ */
+describe("owner recording cross-x10 2026-11-27", () => {
+  const run = detectFixture("owner-cross-x10-2026-11-27.json");
+  const inRange = <T extends { timestamp: number }>(xs: T[], a: number, b: number) =>
+    xs.filter((x) => x.timestamp >= a * 1000 && x.timestamp < b * 1000);
+
+  it("reads the jabs as jabs", () => {
+    const section = inRange(run.punches, 8, 32);
+    expect(section.filter((p) => p.type === "jab").length).toBeGreaterThanOrEqual(10);
+    expect(section.filter((p) => p.type !== "jab")).toEqual([]);
+  });
+
+  it("reads 9 of 10 crosses, no recoil uppercuts, at most one stray slip", () => {
+    const section = inRange(run.punches, 40, 60);
+    expect(section.filter((p) => p.type === "cross").length).toBeGreaterThanOrEqual(9);
+    expect(section.filter((p) => p.type === "uppercut")).toEqual([]);
+    expect(inRange(run.defense, 40, 60).filter((d) => d.type === "slip:left" || d.type === "slip:right").length).toBeLessThanOrEqual(1);
   });
 });

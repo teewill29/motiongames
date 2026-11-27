@@ -55,6 +55,8 @@ export const boxingConfig = {
   uppercutPeakWaitMs: 150,
   /** Both hands rising together is raising the guard, not an uppercut: the other hand must rise slower than this. */
   uppercutOtherHandMaxSpeed: 1.5,
+  /** The non-punching hand pulls back during a punch; no uppercut from it within this long (ms) of the other hand's punch. */
+  uppercutRecoilLockoutMs: 400,
 
   // Shared punch rules.
   /** Min time between punches from the same hand. */
@@ -92,6 +94,8 @@ export const boxingConfig = {
   slipMaxTilt: 35,
   /** A cross carries the head sideways: no slip starts while an arm is out in a punch or this long (ms) after one. */
   slipPunchLockoutMs: 500,
+  /** A lean must hold this long (ms) before it counts as a slip; a punch in that time cancels it (the head moves first in a cross). */
+  slipConfirmMs: 150,
 
   // Duck: shoulder midpoint drops below its baseline, in torso lengths.
   duckThreshold: 0.25,
@@ -124,6 +128,7 @@ export const boxingConfigSpecs: TunableSpecs<BoxingConfig> = {
   uppercutLookbackMs: { min: 50, max: 800, step: 10, label: "Uppercut lookback (ms)" },
   uppercutPeakWaitMs: { min: 0, max: 400, step: 10, label: "Uppercut peak wait (ms)" },
   uppercutOtherHandMaxSpeed: { min: 0.2, max: 10, step: 0.1, label: "Uppercut other hand max" },
+  uppercutRecoilLockoutMs: { min: 0, max: 1000, step: 10, label: "Uppercut recoil lockout (ms)" },
   cooldownMs: { min: 0, max: 1000, step: 10, label: "Hand cooldown (ms)" },
   maxWristSpeed: { min: 5, max: 100, step: 1, label: "Glitch speed" },
   decisionWindowMs: { min: 0, max: 300, step: 1, label: "Decision window (ms)" },
@@ -138,6 +143,7 @@ export const boxingConfigSpecs: TunableSpecs<BoxingConfig> = {
   slipExitRatio: { min: 0.1, max: 1, step: 0.05, label: "Slip exit ratio" },
   slipMaxTilt: { min: 0, max: 90, step: 1, label: "Slip max tilt (°)" },
   slipPunchLockoutMs: { min: 0, max: 1000, step: 10, label: "Slip punch lockout (ms)" },
+  slipConfirmMs: { min: 0, max: 500, step: 10, label: "Slip confirm (ms)" },
   duckThreshold: { min: 0.05, max: 1, step: 0.01, label: "Duck threshold (torso)" },
   duckExitRatio: { min: 0.1, max: 1, step: 0.05, label: "Duck exit ratio" },
   baselineAdaptMs: { min: 0, max: 20000, step: 500, label: "Baseline adapt (ms)" },

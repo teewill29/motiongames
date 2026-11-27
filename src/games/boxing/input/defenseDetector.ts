@@ -31,6 +31,8 @@ export class DefenseDetector {
   private baseline: DefenseBaseline | null;
   private lastHipX: number | null = null;
   private lastT: number | null = null;
+  /** A lean past the threshold waiting to be confirmed as a slip. */
+  private slipCandidate: { dir: "left" | "right"; since: number } | null = null;
   readonly signals: BoxingSignals = { guard: "none", slip: null, duck: false, lean: 0, drop: 0 };
 
   constructor(
@@ -48,6 +50,7 @@ export class DefenseDetector {
   /** Forget timing after a jump in time (replay seek). Keeps the baseline. */
   reset(): void {
     this.lastT = null;
+    this.slipCandidate = null;
     Object.assign(this.signals, { guard: "none", slip: null, duck: false, lean: 0, drop: 0 });
   }
 
@@ -85,8 +88,13 @@ export class DefenseDetector {
     const level = Math.abs(f.shoulderTilt) <= cfg.slipMaxTilt;
     let slip: SlipState = s.slip;
     if (slip === null) {
-      if (level && !punching && lean <= -cfg.slipThreshold) slip = "left";
-      else if (level && !punching && lean >= cfg.slipThreshold) slip = "right";
+      const dir = lean <= -cfg.slipThreshold ? "left" : lean >= cfg.slipThreshold ? "right" : null;
+      if (!dir || !level || punching) this.slipCandidate = null;
+      else if (this.slipCandidate?.dir !== dir) this.slipCandidate = { dir, since: t };
+      if (this.slipCandidate && t - this.slipCandidate.since >= cfg.slipConfirmMs) {
+        slip = this.slipCandidate.dir;
+        this.slipCandidate = null;
+      }
     } else if (Math.abs(lean) < cfg.slipThreshold * cfg.slipExitRatio || (slip === "left") !== lean < 0) {
       slip = null;
     }
